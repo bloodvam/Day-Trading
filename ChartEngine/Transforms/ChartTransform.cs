@@ -35,6 +35,11 @@ namespace ChartEngine.Transforms
         public void SetVisibleRange(int startIndex, int endIndex)
         {
             VisibleRange.Set(startIndex, endIndex);
+            // 如果已经有布局信息,立即更新 HorizontalScale
+            if (_priceArea.Width > 0)
+            {
+                _horizontal.Update(_priceArea, VisibleRange);
+            }
         }
 
         public void SetPriceRange(double minPrice, double maxPrice)
