@@ -13,6 +13,8 @@ namespace ChartEngine.Transforms
         private readonly HorizontalScale _horizontal = new HorizontalScale();
         private readonly VerticalScale _vertical = new VerticalScale();
         private readonly VolumeScale _volume = new VolumeScale();
+        private Rectangle _priceArea;
+        private Rectangle _volumeArea;
 
         public VisibleRange VisibleRange { get; } = new VisibleRange();
         public PriceRange PriceRange { get; } = new PriceRange();
@@ -22,7 +24,14 @@ namespace ChartEngine.Transforms
         public ChartTransform()
         {
         }
+        public void UpdateLayout(Rectangle priceArea, Rectangle volumeArea)
+        {
+            _priceArea = priceArea;
+            _volumeArea = volumeArea;
 
+            // 预先更新 HorizontalScale
+            _horizontal.Update(priceArea, VisibleRange);
+        }
         public void SetVisibleRange(int startIndex, int endIndex)
         {
             VisibleRange.Set(startIndex, endIndex);

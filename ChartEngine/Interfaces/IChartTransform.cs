@@ -15,6 +15,11 @@ namespace ChartEngine.Interfaces
         /// <summary>当前主图的价格显示区间</summary>
         PriceRange PriceRange { get; }
 
+
+        /// <summary>
+        /// 更新布局信息（新增）
+        /// </summary>
+        void UpdateLayout(Rectangle priceArea, Rectangle volumeArea);
         /// <summary>
         /// 数据索引 → 像素 X 坐标（主图/volume 共用横轴）
         /// </summary>

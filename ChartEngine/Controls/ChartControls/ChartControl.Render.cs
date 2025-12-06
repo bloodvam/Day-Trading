@@ -37,7 +37,7 @@ namespace ChartEngine.ChartControls
         {
             // 1. 布局：简单版，后续可以拆到 ChartControl.Layout.cs 里
             CalculateLayout(out Rectangle priceArea, out Rectangle volumeArea);
-
+            _transform.UpdateLayout(priceArea, volumeArea);
             // 2. 自动更新可视区/价格区/Volume 最大值
             UpdateAutoRanges();
 
