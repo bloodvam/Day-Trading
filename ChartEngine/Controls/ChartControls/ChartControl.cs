@@ -38,6 +38,17 @@ namespace ChartEngine.ChartControls
 
             // 如果外部没有设置 Series，就先用一组测试数据
             _series = GenerateTestSeries();
+            
+
+
+
+            // 调试信息
+            System.Diagnostics.Debug.WriteLine($"=== ChartControl 初始化 ===");
+            System.Diagnostics.Debug.WriteLine($"Series Count: {_series.Count}");
+            System.Diagnostics.Debug.WriteLine($"First bar: O={_series.Bars[0].Open}, C={_series.Bars[0].Close}");
+            System.Diagnostics.Debug.WriteLine($"Last bar: O={_series.Bars[_series.Count - 1].Open}, C={_series.Bars[_series.Count - 1].Close}");
+
+            _transform.SetVisibleRange(0, _series.Count - 1);
             UpdateAutoRanges();
         }
 

@@ -35,11 +35,18 @@ namespace ChartEngine.ChartControls
         /// </summary>
         internal void RenderAll(Graphics g)
         {
+            Console.WriteLine($"VisibleRange: {Transform.VisibleRange.StartIndex} - {Transform.VisibleRange.EndIndex}");
+            System.Diagnostics.Debug.WriteLine($"=== RenderAll 开始 ===");
             // 1. 布局：简单版，后续可以拆到 ChartControl.Layout.cs 里
             CalculateLayout(out Rectangle priceArea, out Rectangle volumeArea);
+            System.Diagnostics.Debug.WriteLine($"PriceArea: X={priceArea.X}, Y={priceArea.Y}, W={priceArea.Width}, H={priceArea.Height}");
+            System.Diagnostics.Debug.WriteLine($"VolumeArea: X={volumeArea.X}, Y={volumeArea.Y}, W={volumeArea.Width}, H={volumeArea.Height}");
             _transform.UpdateLayout(priceArea, volumeArea);
+            System.Diagnostics.Debug.WriteLine($"UpdateLayout 前 - Visible Range: {_transform.VisibleRange.StartIndex} - {_transform.VisibleRange.EndIndex}, Count={_transform.VisibleRange.Count}");
             // 2. 自动更新可视区/价格区/Volume 最大值
             UpdateAutoRanges();
+            System.Diagnostics.Debug.WriteLine($"UpdateLayout 后 - Visible Range: {_transform.VisibleRange.StartIndex} - {_transform.VisibleRange.EndIndex}, Count={_transform.VisibleRange.Count}");
+            System.Diagnostics.Debug.WriteLine($"Price Range: {_transform.PriceRange.MinPrice} - {_transform.PriceRange.MaxPrice}");
 
             double maxVolume = ComputeMaxVolumeInVisibleRange();
 
@@ -100,7 +107,10 @@ namespace ChartEngine.ChartControls
             {
                 _transform.SetVisibleRange(0, _series.Count - 1);
                 visible = _transform.VisibleRange;
+                System.Diagnostics.Debug.WriteLine($"UpdateAutoRanges: 设置 VisibleRange 为 0 - {_series.Count - 1}");
             }
+            System.Diagnostics.Debug.WriteLine($"UpdateAutoRanges: Visible Range = {visible.StartIndex} - {visible.EndIndex}, Count = {visible.Count}");
+
 
             int start = Math.Max(0, visible.StartIndex);
             int end = Math.Min(_series.Count - 1, visible.EndIndex);
@@ -125,6 +135,7 @@ namespace ChartEngine.ChartControls
                 if (padding <= 0) padding = 1;
 
                 _transform.SetPriceRange(minPrice - padding, maxPrice + padding);
+                System.Diagnostics.Debug.WriteLine($"UpdateAutoRanges: Price Range = {minPrice - padding} - {maxPrice + padding}");
             }
 
             // 3. 自动计算 volume 最大值（放到 MaxVolume）

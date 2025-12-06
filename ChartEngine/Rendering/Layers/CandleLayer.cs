@@ -29,10 +29,14 @@ namespace ChartEngine.Rendering.Layers
             var g = ctx.Graphics;
 
             if (range.Count <= 0)
+            {
+                System.Diagnostics.Debug.WriteLine("CandleLayer: range.Count <= 0, 不绘制");
                 return;
+            }
+                
 
             float barWidth = (float)area.Width / range.Count;
-
+            int drawCount = 0;
             for (int i = range.StartIndex; i <= range.EndIndex; i++)
             {
                 var bar = bars[i];
@@ -43,6 +47,10 @@ namespace ChartEngine.Rendering.Layers
                 float yClose = transform.PriceToY(bar.Close, area);
                 float yHigh = transform.PriceToY(bar.High, area);
                 float yLow = transform.PriceToY(bar.Low, area);
+                if (drawCount < 3) // 只打印前3根的坐标
+                {
+                    System.Diagnostics.Debug.WriteLine($"Bar[{i}]: xCenter={xCenter}, yOpen={yOpen}, yClose={yClose}, yHigh={yHigh}, yLow={yLow}");
+                }
 
                 _painter.RenderSingleBar(
                     g,
@@ -54,7 +62,9 @@ namespace ChartEngine.Rendering.Layers
                     yHigh,
                     yLow
                 );
+                drawCount++;
             }
+            System.Diagnostics.Debug.WriteLine($"实际绘制了 {drawCount} 根K线");
         }
     }
 }
