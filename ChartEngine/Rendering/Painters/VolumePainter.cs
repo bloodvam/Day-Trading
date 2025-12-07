@@ -5,10 +5,17 @@ using ChartEngine.Styles;
 namespace ChartEngine.Rendering.Painters
 {
     /// <summary>
-    /// 绘制一根成交量柱（不关心循环和坐标转换）
+    /// 成交量绘制器（使用对象池优化）
     /// </summary>
     public class VolumePainter : IVolumeRenderer
     {
+        private readonly RenderResourcePool _resourcePool;
+
+        public VolumePainter(RenderResourcePool resourcePool = null)
+        {
+            _resourcePool = resourcePool ?? new RenderResourcePool();
+        }
+
         public void RenderVolumeBar(
             Graphics g,
             VolumeStyle style,
@@ -28,7 +35,8 @@ namespace ChartEngine.Rendering.Painters
             if (height < style.MinBarHeight)
                 height = style.MinBarHeight;
 
-            using Brush brush = new SolidBrush(color);
+            // 🔥 优化点：使用对象池
+            var brush = _resourcePool.GetBrush(color);
 
             g.FillRectangle(
                 brush,
@@ -37,6 +45,8 @@ namespace ChartEngine.Rendering.Painters
                 width,
                 height
             );
+
+            // 注意：不再需要 dispose
         }
     }
 }
