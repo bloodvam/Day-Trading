@@ -11,6 +11,7 @@ namespace ChartEngine.Rendering.Layers
     {
         public string Name => "Volume";
         public bool IsVisible { get; set; } = true;
+        public int ZOrder { get; set; } = 10; // 成交量在网格之上,K线之下
 
         private readonly VolumePainter _painter = new VolumePainter();
 

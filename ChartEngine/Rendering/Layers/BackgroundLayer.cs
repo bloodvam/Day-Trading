@@ -1,4 +1,5 @@
-﻿using ChartEngine.Styles;
+﻿using System.Drawing;
+using ChartEngine.Styles;
 using ChartEngine.Interfaces;
 
 namespace ChartEngine.Rendering.Layers
@@ -7,6 +8,7 @@ namespace ChartEngine.Rendering.Layers
     {
         public string Name => "Background";
         public bool IsVisible { get; set; } = true;
+        public int ZOrder { get; set; } = 0; // 最底层
 
         public BackgroundStyle Style { get; set; }
 
