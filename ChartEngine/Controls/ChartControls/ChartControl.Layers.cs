@@ -17,18 +17,20 @@ namespace ChartEngine.ChartControls
         private readonly List<IChartLayer> _layers = new();
 
         /// <summary>
-        /// 初始化默认图层：背景、网格、成交量、K线。
+        /// 初始化默认图层：背景、网格、成交量、K线、坐标轴、十字光标。
         /// </summary>
         private void InitializeLayers()
         {
             _layers.Clear();
 
             // 添加图层 (按 ZOrder 自动排序)
-            // GridStyle 从 Styles 模块获取
+            // GridStyle、AxisStyle、CrosshairStyle 从 Styles 模块获取
             _layers.Add(new BackgroundLayer(BackgroundStyle) { ZOrder = 0 });
             _layers.Add(new GridLayer(GridStyle) { ZOrder = 1 });
             _layers.Add(new VolumeLayer() { ZOrder = 10 });
             _layers.Add(new CandleLayer() { ZOrder = 20 });
+            _layers.Add(new AxisLayer(AxisStyle) { ZOrder = 30 });
+            _layers.Add(new CrosshairLayer(CrosshairStyle) { ZOrder = 100 });
 
             // 按 ZOrder 排序
             SortLayersByZOrder();
@@ -119,6 +121,32 @@ namespace ChartEngine.ChartControls
             if (candleLayer != null)
             {
                 candleLayer.IsVisible = !candleLayer.IsVisible;
+                Invalidate();
+            }
+        }
+
+        /// <summary>
+        /// 切换坐标轴的显示/隐藏。
+        /// </summary>
+        public void ToggleAxis()
+        {
+            var axisLayer = GetLayer<AxisLayer>();
+            if (axisLayer != null)
+            {
+                axisLayer.IsVisible = !axisLayer.IsVisible;
+                Invalidate();
+            }
+        }
+
+        /// <summary>
+        /// 切换十字光标的显示/隐藏。
+        /// </summary>
+        public void ToggleCrosshair()
+        {
+            var crosshairLayer = GetLayer<CrosshairLayer>();
+            if (crosshairLayer != null)
+            {
+                crosshairLayer.IsVisible = !crosshairLayer.IsVisible;
                 Invalidate();
             }
         }

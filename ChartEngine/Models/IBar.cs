@@ -1,4 +1,6 @@
-﻿namespace ChartEngine.Models
+﻿using System;
+
+namespace ChartEngine.Models
 {
     /// <summary>
     /// 表示一根标准 OHLCV K线。
@@ -10,5 +12,10 @@
         double Low { get; }
         double Close { get; }
         double Volume { get; }
+
+        /// <summary>
+        /// K线时间戳
+        /// </summary>
+        DateTime Timestamp { get; }
     }
 }

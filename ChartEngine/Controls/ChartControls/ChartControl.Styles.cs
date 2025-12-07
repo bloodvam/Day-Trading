@@ -22,6 +22,12 @@ namespace ChartEngine.ChartControls
         /// <summary>网格样式</summary>
         public GridStyle GridStyle { get; private set; }
 
+        /// <summary>坐标轴样式</summary>
+        public AxisStyle AxisStyle { get; private set; }
+
+        /// <summary>十字光标样式</summary>
+        public CrosshairStyle CrosshairStyle { get; private set; }
+
         /// <summary>
         /// 初始化默认样式。
         /// </summary>
@@ -59,6 +65,12 @@ namespace ChartEngine.ChartControls
 
             // 初始化网格样式
             GridStyle = GridStyle.GetDarkThemeDefault();
+
+            // 初始化坐标轴样式
+            AxisStyle = AxisStyle.GetDarkThemeDefault();
+
+            // 初始化十字光标样式
+            CrosshairStyle = CrosshairStyle.GetDarkThemeDefault();
         }
 
         /// <summary>
@@ -79,6 +91,8 @@ namespace ChartEngine.ChartControls
             VolumeStyle.BorderColor = Color.FromArgb(80, 80, 80);
 
             UpdateGridStyle(GridStyle.GetDarkThemeDefault());
+            UpdateAxisStyle(AxisStyle.GetDarkThemeDefault());
+            UpdateCrosshairStyle(CrosshairStyle.GetDarkThemeDefault());
 
             Invalidate();
         }
@@ -101,6 +115,8 @@ namespace ChartEngine.ChartControls
             VolumeStyle.BorderColor = Color.FromArgb(120, 120, 120);
 
             UpdateGridStyle(GridStyle.GetLightThemeDefault());
+            UpdateAxisStyle(AxisStyle.GetLightThemeDefault());
+            UpdateCrosshairStyle(CrosshairStyle.GetLightThemeDefault());
 
             Invalidate();
         }
@@ -123,6 +139,7 @@ namespace ChartEngine.ChartControls
             VolumeStyle.BorderColor = Color.FromArgb(60, 60, 60);
 
             UpdateGridStyle(GridStyle.GetTradingViewStyle());
+            UpdateAxisStyle(AxisStyle.GetTradingViewStyle());
 
             Invalidate();
         }
@@ -172,6 +189,40 @@ namespace ChartEngine.ChartControls
             if (style == null) return;
             BackgroundStyle = style;
             Invalidate();
+        }
+
+        /// <summary>
+        /// 更新坐标轴样式
+        /// </summary>
+        public void UpdateAxisStyle(AxisStyle style)
+        {
+            if (style == null) return;
+
+            AxisStyle = style;
+
+            var axisLayer = GetLayer<AxisLayer>();
+            if (axisLayer != null)
+            {
+                axisLayer.UpdateStyle(style);
+                Invalidate();
+            }
+        }
+
+        /// <summary>
+        /// 更新十字光标样式
+        /// </summary>
+        public void UpdateCrosshairStyle(CrosshairStyle style)
+        {
+            if (style == null) return;
+
+            CrosshairStyle = style;
+
+            var crosshairLayer = GetLayer<CrosshairLayer>();
+            if (crosshairLayer != null)
+            {
+                crosshairLayer.UpdateStyle(style);
+                Invalidate();
+            }
         }
     }
 }
