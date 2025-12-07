@@ -1,8 +1,9 @@
 ﻿using System.Drawing;
 using ChartEngine.Interfaces;
-using ChartEngine.Transforms;
-using ChartEngine.Styles;
-using ChartEngine.Models;
+using ChartEngine.Data.Models;
+using ChartEngine.Transforms.DataModels;
+using ChartEngine.Styles.Core;
+
 namespace ChartEngine.Rendering
 {
     /// <summary>

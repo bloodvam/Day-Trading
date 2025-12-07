@@ -3,7 +3,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using ChartEngine.Interfaces;
 using ChartEngine.Rendering;
-using ChartEngine.Styles;
+using ChartEngine.Styles.Core;
 
 namespace ChartEngine.Rendering.Layers
 {

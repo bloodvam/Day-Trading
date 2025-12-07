@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Drawing;
 using ChartEngine.Rendering;
-using ChartEngine.Styles;
-using ChartEngine.Models;
+using ChartEngine.Data.Models;
+using ChartEngine.Styles.Core;
 
 namespace ChartEngine.Rendering.Painters
 {

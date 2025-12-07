@@ -2,8 +2,8 @@
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using ChartEngine.Rendering;
-using ChartEngine.Styles;
-using ChartEngine.Models;
+using ChartEngine.Data.Models;
+using ChartEngine.Styles.Core;
 
 namespace ChartEngine.Rendering.Painters
 {

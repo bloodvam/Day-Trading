@@ -1,4 +1,6 @@
-﻿namespace ChartEngine.Styles.Themes
+﻿using ChartEngine.Styles.Core;
+
+namespace ChartEngine.Styles.Themes
 {
     /// <summary>
     /// 图表主题接口

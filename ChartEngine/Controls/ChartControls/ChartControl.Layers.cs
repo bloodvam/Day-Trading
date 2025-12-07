@@ -3,7 +3,7 @@ using System.Linq;
 using ChartEngine.Interfaces;
 using ChartEngine.Rendering.Layers;
 
-namespace ChartEngine.ChartControls
+namespace ChartEngine.Controls.ChartControls
 {
     /// <summary>
     /// ChartControl 的图层管理部分（partial）。

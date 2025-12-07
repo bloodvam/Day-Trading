@@ -1,5 +1,5 @@
 ﻿using System.Drawing;
-using ChartEngine.Transforms;
+using ChartEngine.Transforms.DataModels;
 
 namespace ChartEngine.Interfaces
 {

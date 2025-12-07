@@ -2,7 +2,7 @@
 using System.Drawing;
 using ChartEngine.Config;
 
-namespace ChartEngine.ChartControls
+namespace ChartEngine.Controls.ChartControls
 {
     /// <summary>
     /// ChartControl 的布局计算部分（partial）

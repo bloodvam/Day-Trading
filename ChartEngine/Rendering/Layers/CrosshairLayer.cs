@@ -4,7 +4,7 @@ using System.Windows.Forms;
 using ChartEngine.Interfaces;
 using ChartEngine.Rendering;
 using ChartEngine.Rendering.Painters;
-using ChartEngine.Styles;
+using ChartEngine.Styles.Core;
 
 namespace ChartEngine.Rendering.Layers
 {

@@ -1,8 +1,8 @@
 ﻿using System.Drawing;
-using ChartEngine.Styles;
 using ChartEngine.Rendering.Layers;
+using ChartEngine.Styles.Core;
 
-namespace ChartEngine.ChartControls
+namespace ChartEngine.Controls.ChartControls
 {
     /// <summary>
     /// ChartControl 的样式管理部分（partial）。

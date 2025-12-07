@@ -83,7 +83,7 @@ namespace ChartEngine.Styles.Themes
             SwitchTheme("Dark");
         }
 
-        public void ApplyTheme(ChartControls.ChartControl chart, IChartTheme theme)
+        public void ApplyTheme(Controls.ChartControls.ChartControl chart, IChartTheme theme)
         {
             if (chart == null)
                 throw new ArgumentNullException(nameof(chart));
@@ -105,7 +105,7 @@ namespace ChartEngine.Styles.Themes
             chart.Invalidate();
         }
 
-        public void ApplyCurrentTheme(ChartControls.ChartControl chart)
+        public void ApplyCurrentTheme(Controls.ChartControls.ChartControl chart)
         {
             ApplyTheme(chart, CurrentTheme);
         }

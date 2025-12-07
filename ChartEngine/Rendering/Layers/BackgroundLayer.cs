@@ -1,6 +1,6 @@
 ﻿using System.Drawing;
-using ChartEngine.Styles;
 using ChartEngine.Interfaces;
+using ChartEngine.Styles.Core;
 
 namespace ChartEngine.Rendering.Layers
 {

@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Windows.Forms;
-using ChartEngine.Models;
+using ChartEngine.Data.Models;
 
-namespace ChartEngine.ChartControls
+namespace ChartEngine.Controls.ChartControls
 {
     /// <summary>
     /// 主图表控件入口（partial），其他功能拆分在 ChartControl.*.cs 中。

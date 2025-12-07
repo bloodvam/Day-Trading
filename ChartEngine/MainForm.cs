@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Windows.Forms;
-using ChartEngine.ChartControls;
+using ChartEngine.Controls.ChartControls;
 
 namespace ChartEngine   // ← 根据你项目命名空间调整
 {

@@ -1,9 +1,9 @@
 ﻿using System.Drawing;
 using ChartEngine.Rendering;
-using ChartEngine.Transforms;
+using ChartEngine.Transforms.Core;
 using ChartEngine.Interfaces;
 
-namespace ChartEngine.ChartControls
+namespace ChartEngine.Controls.ChartControls
 {
     /// <summary>
     /// ChartControl 的渲染相关逻辑（partial）

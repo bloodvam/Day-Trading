@@ -11,7 +11,7 @@ namespace ChartEngine.Interaction
     /// </summary>
     public class ChartInputHandler : IInputHandler
     {
-        private readonly ChartControls.ChartControl _chart;
+        private readonly Controls.ChartControls.ChartControl _chart;
 
         // 鼠标状态
         private Point _lastMousePosition;
@@ -27,7 +27,7 @@ namespace ChartEngine.Interaction
         private const int MinVisibleBars = 10;
         private const int MaxVisibleBars = 1000;
 
-        public ChartInputHandler(ChartControls.ChartControl chart)
+        public ChartInputHandler(Controls.ChartControls.ChartControl chart)
         {
             _chart = chart ?? throw new ArgumentNullException(nameof(chart));
         }

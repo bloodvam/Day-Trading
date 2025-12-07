@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Drawing;
 using ChartEngine.Rendering;
-using ChartEngine.Styles;
+using ChartEngine.Styles.Core;
 
 namespace ChartEngine.Rendering.Painters
 {

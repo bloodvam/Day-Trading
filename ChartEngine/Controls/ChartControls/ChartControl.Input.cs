@@ -5,7 +5,7 @@ using ChartEngine.Interaction;
 using ChartEngine.Rendering.Layers;
 using ChartEngine.Rendering;
 
-namespace ChartEngine.ChartControls
+namespace ChartEngine.Controls.ChartControls
 {
     /// <summary>
     /// ChartControl 的输入处理部分（partial）

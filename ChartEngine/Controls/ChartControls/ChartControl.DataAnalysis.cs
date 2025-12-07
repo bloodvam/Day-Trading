@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
-using ChartEngine.Models;
+using ChartEngine.Data.Models;
 
-namespace ChartEngine.ChartControls
+namespace ChartEngine.Controls.ChartControls
 {
     /// <summary>
     /// ChartControl 的数据分析部分（partial）

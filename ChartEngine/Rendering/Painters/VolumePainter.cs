@@ -1,6 +1,6 @@
 ﻿using System.Drawing;
 using ChartEngine.Interfaces;
-using ChartEngine.Styles;
+using ChartEngine.Styles.Core;
 
 namespace ChartEngine.Rendering.Painters
 {

@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using ChartEngine.Models;
+using ChartEngine.Data.Models;
 
 namespace ChartEngine.Utils
 {

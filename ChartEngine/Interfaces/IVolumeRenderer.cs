@@ -1,5 +1,5 @@
 ﻿using System.Drawing;
-using ChartEngine.Styles;
+using ChartEngine.Styles.Core;
 
 namespace ChartEngine.Interfaces
 {
