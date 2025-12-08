@@ -19,9 +19,7 @@ namespace ChartEngine.Controls.Specialized
         private CancellationTokenSource _loadCancellationTokenSource;
         private bool _isLoading = false;
 
-        // ========== 脏区域渲染 ==========
-        private readonly IncrementalRenderer _incrementalRenderer;
-        private bool _useIncrementalRendering = true;
+
 
         // ========== 原有组件 ==========
         private readonly RenderResourcePool _resourcePool;
@@ -40,27 +38,11 @@ namespace ChartEngine.Controls.Specialized
             // 初始化组件
             _resourcePool = new RenderResourcePool();
             _dataLoader = new AsyncDataLoader();
-            _incrementalRenderer = new IncrementalRenderer();
 
             // 其他初始化...
         }
 
-        /// <summary>
-        /// 是否启用增量渲染
-        /// </summary>
-        public bool UseIncrementalRendering
-        {
-            get => _useIncrementalRendering;
-            set
-            {
-                _useIncrementalRendering = value;
-                if (value)
-                {
-                    // 初始化后备缓冲区
-                    _incrementalRenderer.InitializeBackBuffer(Width, Height);
-                }
-            }
-        }
+
 
         /// <summary>
         /// 是否正在加载数据
@@ -167,11 +149,6 @@ namespace ChartEngine.Controls.Specialized
             _isDataReady = true;
             _isLoading = false;
 
-            // 标记全屏脏区域
-            if (_useIncrementalRendering)
-            {
-                _incrementalRenderer.InvalidateBackBuffer("数据加载完成");
-            }
 
             Invalidate();
 
@@ -188,60 +165,9 @@ namespace ChartEngine.Controls.Specialized
             _dataLoader?.CancelLoad();
         }
 
-        /// <summary>
-        /// 标记指定K线范围为脏
-        /// </summary>
-        public void InvalidateBarRange(int startIndex, int endIndex, string reason = "")
-        {
-            if (!_useIncrementalRendering)
-            {
-                Invalidate();
-                return;
-            }
 
-            // 计算K线范围对应的屏幕矩形
-            // 实际项目中需要根据 Transform 计算精确矩形
-            var bounds = new Rectangle(0, 0, Width, Height); // 简化版
 
-            _incrementalRenderer.DirtyRegions.MarkBarRange(
-                bounds,
-                startIndex,
-                endIndex,
-                reason);
 
-            Invalidate();
-        }
-
-        /// <summary>
-        /// 标记十字光标为脏
-        /// </summary>
-        public void InvalidateCrosshair()
-        {
-            if (!_useIncrementalRendering)
-            {
-                Invalidate();
-                return;
-            }
-
-            // 计算十字光标区域
-            var bounds = new Rectangle(0, 0, Width, Height); // 简化版
-
-            _incrementalRenderer.DirtyRegions.MarkCrosshair(bounds, "十字光标移动");
-            Invalidate();
-        }
-
-        protected override void OnResize(EventArgs e)
-        {
-            base.OnResize(e);
-
-            if (_useIncrementalRendering)
-            {
-                // 窗口大小变化，重新初始化缓冲区
-                _incrementalRenderer.InitializeBackBuffer(Width, Height);
-            }
-
-            Invalidate();
-        }
 
         protected override void OnPaint(PaintEventArgs e)
         {
@@ -259,46 +185,11 @@ namespace ChartEngine.Controls.Specialized
                 return;
             }
 
-            if (_useIncrementalRendering)
-            {
-                RenderIncremental(e.Graphics);
-            }
+
             else
             {
                 RenderFull(e.Graphics);
             }
-        }
-
-        /// <summary>
-        /// 增量渲染
-        /// </summary>
-        private void RenderIncremental(Graphics screenGraphics)
-        {
-            // 确保后备缓冲区已初始化
-            if (!_incrementalRenderer.IsBackBufferValid)
-            {
-                _incrementalRenderer.InitializeBackBuffer(Width, Height);
-            }
-
-            // 如果需要全屏渲染
-            if (_incrementalRenderer.DirtyRegions.IsFullScreenDirty)
-            {
-                _incrementalRenderer.RenderFullToBackBuffer(g =>
-                {
-                    RenderAllLayers(g);
-                });
-            }
-            // 否则只渲染脏区域
-            else if (_incrementalRenderer.DirtyRegions.HasDirtyRegions)
-            {
-                _incrementalRenderer.RenderToBackBuffer((g, clipRect) =>
-                {
-                    RenderAllLayers(g);
-                }, ClientRectangle);
-            }
-
-            // 复制到屏幕
-            _incrementalRenderer.CopyToScreen(screenGraphics, ClientRectangle);
         }
 
         /// <summary>
@@ -380,21 +271,11 @@ namespace ChartEngine.Controls.Specialized
                 CancelDataLoad();
                 _loadCancellationTokenSource?.Dispose();
 
-                // 释放渲染资源
-                _resourcePool?.Dispose();
-                _incrementalRenderer?.DisposeBackBuffer();
             }
 
             base.Dispose(disposing);
         }
 
-        /// <summary>
-        /// 获取性能统计信息
-        /// </summary>
-        public string GetPerformanceStatistics()
-        {
-            return $"对象池: {_resourcePool.GetCacheStats()}, " +
-                   $"增量渲染: {_incrementalRenderer.GetStatistics()}";
-        }
+
     }
 }
