@@ -7,6 +7,10 @@ namespace ChartEngine.Transforms.Scales
     /// <summary>
     /// index ↔ 像素 X 的映射（带缓存优化）
     /// 优化要点：避免重复计算相同参数的坐标转换
+    /// 
+    /// 修改记录:
+    /// - 2024/12/09: 修正 XToIndex 吸附逻辑，去掉 -0.5f，使用纯 Floor 计算
+    ///   使吸附行为更符合直觉：鼠标在哪根 bar 上就吸附哪根 bar
     /// </summary>
     public class HorizontalScale
     {
@@ -60,16 +64,34 @@ namespace ChartEngine.Transforms.Scales
             return plotArea.Left + (localIndex + 0.5f) * barWidth;
         }
 
+        /// <summary>
+        /// 将像素 X 坐标转换为 K 线索引
+        /// 
+        /// 吸附逻辑：
+        /// - 鼠标在 [barN_left, barN_right) 范围内都吸附到 barN
+        /// - 使用 Floor 确保在整根 bar 范围内都返回相同索引
+        /// - 与 IndexToX 的 +0.5f 逻辑对称一致
+        /// </summary>
         public int XToIndex(float x, Rectangle plotArea, VisibleRange range)
         {
             if (range.Count <= 0 || plotArea.Width <= 0)
                 return range.StartIndex;
 
             float barWidth = (float)plotArea.Width / range.Count;
-            float localIndex = (x - plotArea.Left) / barWidth - 0.5f;
 
-            int index = range.StartIndex + (int)Math.Floor(localIndex);
+            // 计算相对位置 (0-based)
+            float relativeX = x - plotArea.Left;
+            float localIndexFloat = relativeX / barWidth;
 
+            // 直接 Floor，鼠标在 [barN, barN+1) 范围内都吸附到 barN
+            // 例如：localIndexFloat = 1.3 -> localIndex = 1
+            //       localIndexFloat = 1.9 -> localIndex = 1
+            //       localIndexFloat = 2.0 -> localIndex = 2
+            int localIndex = (int)Math.Floor(localIndexFloat);
+
+            int index = range.StartIndex + localIndex;
+
+            // 边界检查
             if (index < range.StartIndex) index = range.StartIndex;
             if (index > range.EndIndex) index = range.EndIndex;
 
