@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Drawing;
 using ChartEngine.Transforms.DataModels;
-
+using ChartEngine.Config;
 namespace ChartEngine.Transforms.Scales
 {
     /// <summary>

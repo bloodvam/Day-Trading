@@ -1,4 +1,5 @@
 ﻿using System.Drawing;
+using ChartEngine.Config;
 using ChartEngine.Interfaces;
 using ChartEngine.Transforms.DataModels;
 using ChartEngine.Transforms.Scales;

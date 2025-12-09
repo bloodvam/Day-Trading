@@ -17,5 +17,7 @@
 
         /// <summary>成交量上方留白比例</summary>
         public double VolumePaddingRatio { get; set; } = 0.1;
+
+
     }
 }
