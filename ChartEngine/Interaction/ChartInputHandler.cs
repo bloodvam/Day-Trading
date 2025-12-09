@@ -1,7 +1,9 @@
-﻿using System;
+﻿// ChartEngine/Interaction/ChartInputHandler.cs
+using System;
 using System.Drawing;
 using System.Windows.Forms;
 using ChartEngine.Interfaces;
+using ChartEngine.Rendering.Layers;
 
 namespace ChartEngine.Interaction
 {
@@ -13,31 +15,51 @@ namespace ChartEngine.Interaction
     {
         private readonly Controls.ChartControls.ChartControl _chart;
 
+        // ========================================
         // 鼠标状态
+        // ========================================
         private Point _lastMousePosition;
         private bool _isPanning = false;
         private bool _isMouseInside = false;
 
+        // ========================================
         // 平移相关
+        // ========================================
         private int _panStartIndex;
         private int _panEndIndex;
+        private float _accumulatedPanOffset = 0f;  // 🔥 新增：累积小数偏移
 
+        // ========================================
         // 缩放相关
+        // ========================================
         private const float ZoomSpeed = 0.1f;
         private const int MinVisibleBars = 10;
         private const int MaxVisibleBars = 1000;
 
+        // ========================================
+        // Crosshair 相关
+        // ========================================
+        private CrosshairLayer _crosshairLayer;  // 🔥 新增
+
         public ChartInputHandler(Controls.ChartControls.ChartControl chart)
         {
             _chart = chart ?? throw new ArgumentNullException(nameof(chart));
+
+            // 🔥 获取 CrosshairLayer 引用（避免每次查找）
+            _crosshairLayer = _chart.GetLayer<CrosshairLayer>();
         }
+
+        // ========================================
+        // 鼠标事件处理
+        // ========================================
 
         /// <summary>
         /// 处理鼠标按下事件
         /// </summary>
         public void OnMouseDown(MouseEventArgs e)
         {
-            if (e.Button == MouseButtons.Left)
+            // 🔥 改进：改为右键拖动
+            if (e.Button == MouseButtons.Right)
             {
                 // 开始拖动
                 _isPanning = true;
@@ -48,8 +70,8 @@ namespace ChartEngine.Interaction
                 _panStartIndex = visibleRange.StartIndex;
                 _panEndIndex = visibleRange.EndIndex;
 
-                // 更改鼠标光标
-                _chart.Cursor = Cursors.SizeAll;
+                // 🔥 改进：使用手型光标
+                _chart.Cursor = Cursors.Hand;
             }
         }
 
@@ -62,20 +84,23 @@ namespace ChartEngine.Interaction
 
             if (_isPanning)
             {
-                // 计算拖动距离
+                // ========================================
+                // 拖动模式：执行平移
+                // ========================================
                 int deltaX = e.X - _lastMousePosition.X;
 
                 if (deltaX != 0)
                 {
-                    // 执行平移
                     PerformPan(deltaX);
-                    _lastMousePosition = e.Location;
+                    _lastMousePosition = e.Location;  // 🔥 改进：实时更新
                 }
             }
             else
             {
-                // TODO: 更新十字光标位置
-                // 这里可以触发十字光标层的更新
+                // ========================================
+                // 非拖动模式：更新 Crosshair
+                // ========================================
+                UpdateCrosshair(e.Location);
             }
         }
 
@@ -84,10 +109,14 @@ namespace ChartEngine.Interaction
         /// </summary>
         public void OnMouseUp(MouseEventArgs e)
         {
-            if (e.Button == MouseButtons.Left)
+            // 🔥 改进：改为右键
+            if (e.Button == MouseButtons.Right)
             {
                 _isPanning = false;
                 _chart.Cursor = Cursors.Default;
+
+                // 🔥 改进：清零累积偏移
+                _accumulatedPanOffset = 0f;
             }
         }
 
@@ -104,6 +133,21 @@ namespace ChartEngine.Interaction
             {
                 // 以鼠标位置为中心进行缩放
                 PerformZoom(delta > 0, e.Location);
+            }
+        }
+
+        /// <summary>
+        /// 🔥 新增：处理鼠标离开事件
+        /// </summary>
+        public void OnMouseLeave()
+        {
+            _isMouseInside = false;
+
+            // 隐藏 Crosshair
+            if (_crosshairLayer != null)
+            {
+                _crosshairLayer.Hide();
+                _chart.Invalidate();
             }
         }
 
@@ -162,8 +206,35 @@ namespace ChartEngine.Interaction
             // 当前不需要处理
         }
 
+        // ========================================
+        // Crosshair 更新逻辑
+        // ========================================
+        #region Crosshair
+
         /// <summary>
-        /// 执行平移操作
+        /// 🔥 新增：更新 Crosshair 位置
+        /// </summary>
+        private void UpdateCrosshair(Point mousePosition)
+        {
+            if (_crosshairLayer == null || !_crosshairLayer.IsVisible)
+                return;
+
+            // 只更新状态，不绘制
+            _crosshairLayer.UpdateMousePosition(mousePosition);
+
+            // 触发重绘（在 OnPaint 中统一绘制）
+            _chart.Invalidate();
+        }
+
+        #endregion
+
+        // ========================================
+        // 平移功能
+        // ========================================
+        #region Panning
+
+        /// <summary>
+        /// 🔥 改进：执行平移操作（支持累积小数偏移）
         /// </summary>
         private void PerformPan(int deltaX)
         {
@@ -179,12 +250,17 @@ namespace ChartEngine.Interaction
             // 计算每个像素代表多少根 K 线
             float pixelsPerBar = (float)priceArea.Width / visibleCount;
 
-            // 计算需要平移的 K 线数量
-            int barOffset = (int)(-deltaX / pixelsPerBar);
+            // 🔥 改进：保留小数，累积偏移
+            float barOffsetFloat = -deltaX / pixelsPerBar;
+            _accumulatedPanOffset += barOffsetFloat;
+
+            // 🔥 改进：只有累积到整数时才触发平移
+            int barOffset = (int)_accumulatedPanOffset;
 
             if (barOffset != 0)
             {
                 PanByBars(barOffset);
+                _accumulatedPanOffset -= barOffset;  // 减去已处理部分
             }
         }
 
@@ -223,6 +299,48 @@ namespace ChartEngine.Interaction
             _chart.Transform.SetVisibleRange(newStart, newEnd);
             _chart.Invalidate();
         }
+
+        /// <summary>
+        /// 平移到最开始
+        /// </summary>
+        private void PanToStart()
+        {
+            var series = _chart.Series;
+            if (series == null || series.Count == 0)
+                return;
+
+            var visibleRange = _chart.Transform.VisibleRange;
+            int count = visibleRange.Count;
+
+            _chart.Transform.SetVisibleRange(0, Math.Min(count - 1, series.Count - 1));
+            _chart.Invalidate();
+        }
+
+        /// <summary>
+        /// 平移到最末尾
+        /// </summary>
+        private void PanToEnd()
+        {
+            var series = _chart.Series;
+            if (series == null || series.Count == 0)
+                return;
+
+            var visibleRange = _chart.Transform.VisibleRange;
+            int count = visibleRange.Count;
+
+            int newEnd = series.Count - 1;
+            int newStart = Math.Max(0, newEnd - count + 1);
+
+            _chart.Transform.SetVisibleRange(newStart, newEnd);
+            _chart.Invalidate();
+        }
+
+        #endregion
+
+        // ========================================
+        // 缩放功能
+        // ========================================
+        #region Zooming
 
         /// <summary>
         /// 执行缩放操作
@@ -292,39 +410,6 @@ namespace ChartEngine.Interaction
             _chart.Invalidate();
         }
 
-        /// <summary>
-        /// 平移到最开始
-        /// </summary>
-        private void PanToStart()
-        {
-            var series = _chart.Series;
-            if (series == null || series.Count == 0)
-                return;
-
-            var visibleRange = _chart.Transform.VisibleRange;
-            int count = visibleRange.Count;
-
-            _chart.Transform.SetVisibleRange(0, Math.Min(count - 1, series.Count - 1));
-            _chart.Invalidate();
-        }
-
-        /// <summary>
-        /// 平移到最末尾
-        /// </summary>
-        private void PanToEnd()
-        {
-            var series = _chart.Series;
-            if (series == null || series.Count == 0)
-                return;
-
-            var visibleRange = _chart.Transform.VisibleRange;
-            int count = visibleRange.Count;
-
-            int newEnd = series.Count - 1;
-            int newStart = Math.Max(0, newEnd - count + 1);
-
-            _chart.Transform.SetVisibleRange(newStart, newEnd);
-            _chart.Invalidate();
-        }
+        #endregion
     }
 }

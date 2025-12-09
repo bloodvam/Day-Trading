@@ -1,15 +1,15 @@
-﻿using System;
+﻿// ChartEngine/Controls/ChartControls/ChartControl.Input.cs
+using System;
 using System.Drawing;
 using System.Windows.Forms;
 using ChartEngine.Interaction;
-using ChartEngine.Rendering.Layers;
-using ChartEngine.Rendering;
 
 namespace ChartEngine.Controls.ChartControls
 {
     /// <summary>
     /// ChartControl 的输入处理部分（partial）
-    /// 连接 WinForms 事件到 InputHandler 和 CrosshairLayer
+    /// 只负责接收 WinForms 事件并转发给 InputHandler
+    /// 不包含任何业务逻辑
     /// </summary>
     public partial class ChartControl
     {
@@ -27,6 +27,10 @@ namespace ChartEngine.Controls.ChartControls
         {
             _inputHandler = new ChartInputHandler(this);
         }
+
+        // ========================================
+        // WinForms 事件接收 - 纯转发
+        // ========================================
 
         protected override void OnMouseDown(MouseEventArgs e)
         {
@@ -50,9 +54,6 @@ namespace ChartEngine.Controls.ChartControls
             {
                 _inputHandler?.OnMouseMove(e);
             }
-
-            // 通知 CrosshairLayer
-            NotifyCrosshairMouseMove(e);
         }
 
         protected override void OnMouseUp(MouseEventArgs e)
@@ -79,8 +80,10 @@ namespace ChartEngine.Controls.ChartControls
         {
             base.OnMouseLeave(e);
 
-            // 通知 CrosshairLayer 鼠标离开
-            NotifyCrosshairMouseLeave();
+            if (EnableInteraction)
+            {
+                _inputHandler?.OnMouseLeave();
+            }
         }
 
         protected override void OnKeyDown(KeyEventArgs e)
@@ -100,55 +103,6 @@ namespace ChartEngine.Controls.ChartControls
             if (EnableInteraction)
             {
                 _inputHandler?.OnKeyUp(e);
-            }
-        }
-
-        /// <summary>
-        /// 通知 CrosshairLayer 鼠标移动
-        /// </summary>
-        private void NotifyCrosshairMouseMove(MouseEventArgs e)
-        {
-            var crosshairLayer = GetLayer<CrosshairLayer>();
-            if (crosshairLayer != null && crosshairLayer.IsVisible)
-            {
-                // 需要传递 ChartRenderContext
-                // 由于这里没有 Graphics,我们创建一个临时的
-                using (var g = CreateGraphics())
-                {
-                    CalculateLayout(out Rectangle priceArea, out Rectangle volumeArea);
-                    _transform.UpdateLayout(priceArea, volumeArea);
-                    UpdateAutoRanges();
-
-                    double maxVolume = ComputeMaxVolumeInVisibleRange();
-
-                    var ctx = new ChartRenderContext(
-                        _transform,
-                        _series,
-                        priceArea,
-                        volumeArea,
-                        maxVolume,
-                        g,
-                        CandleStyle,
-                        VolumeStyle
-                    );
-
-                    crosshairLayer.OnMouseMove(e.Location, ctx);
-                }
-
-                Invalidate();
-            }
-        }
-
-        /// <summary>
-        /// 通知 CrosshairLayer 鼠标离开
-        /// </summary>
-        private void NotifyCrosshairMouseLeave()
-        {
-            var crosshairLayer = GetLayer<CrosshairLayer>();
-            if (crosshairLayer != null)
-            {
-                crosshairLayer.OnMouseLeave();
-                Invalidate();
             }
         }
     }

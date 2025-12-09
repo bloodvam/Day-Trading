@@ -8,6 +8,7 @@ namespace ChartEngine.Interfaces
         void OnMouseMove(MouseEventArgs e);
         void OnMouseUp(MouseEventArgs e);
         void OnMouseWheel(MouseEventArgs e);
+        void OnMouseLeave();
         void OnKeyDown(KeyEventArgs e);
         void OnKeyUp(KeyEventArgs e);
     }
