@@ -8,7 +8,6 @@ namespace ChartEngine.Styles.Themes
     public interface IChartTheme
     {
         string Name { get; }
-        BackgroundStyle BackgroundStyle { get; }
         CandleStyle CandleStyle { get; }
         VolumeStyle VolumeStyle { get; }
     }

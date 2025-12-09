@@ -24,9 +24,12 @@ namespace ChartEngine.Controls.ChartControls
         /// <summary>
         /// 初始化 Transform
         /// </summary>
-        private void InitializeTransform()
+        private RenderResourcePool _resourcePool;
+        private void InitializeRenderingEngine()
         {
             _transform = new ChartTransform();
+            _resourcePool = new RenderResourcePool();
+
         }
 
         /// <summary>
@@ -103,6 +106,15 @@ namespace ChartEngine.Controls.ChartControls
                 g.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighSpeed;
                 g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Low;
             }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _resourcePool?.Dispose();
+            }
+            base.Dispose(disposing);
         }
     }
 }

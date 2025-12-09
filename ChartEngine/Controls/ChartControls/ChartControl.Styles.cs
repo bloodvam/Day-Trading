@@ -1,7 +1,7 @@
 ﻿using System.Drawing;
 using ChartEngine.Rendering.Layers;
 using ChartEngine.Styles.Core;
-
+using ChartEngine.Config;
 namespace ChartEngine.Controls.ChartControls
 {
     /// <summary>
@@ -10,8 +10,6 @@ namespace ChartEngine.Controls.ChartControls
     /// </summary>
     public partial class ChartControl
     {
-        /// <summary>背景样式（主图 & 成交量区）</summary>
-        public BackgroundStyle BackgroundStyle { get; private set; }
 
         /// <summary>K 线样式</summary>
         public CandleStyle CandleStyle { get; private set; }
@@ -27,17 +25,14 @@ namespace ChartEngine.Controls.ChartControls
 
         /// <summary>十字光标样式</summary>
         public CrosshairStyle CrosshairStyle { get; private set; }
-
+        public SessionStyle SessionStyle { get; private set; }
+        public TradingSessionConfig SessionConfig { get; private set; }
         /// <summary>
         /// 初始化默认样式。
         /// </summary>
         private void InitializeStyles()
         {
-            BackgroundStyle = new BackgroundStyle
-            {
-                PriceAreaBackColor = Color.FromArgb(20, 20, 20),      // 深色背景
-                VolumeAreaBackColor = Color.FromArgb(15, 15, 15)
-            };
+     
 
             CandleStyle = new CandleStyle
             {
@@ -71,6 +66,8 @@ namespace ChartEngine.Controls.ChartControls
 
             // 初始化十字光标样式
             CrosshairStyle = CrosshairStyle.GetDarkThemeDefault();
+            SessionStyle = SessionStyle.GetDarkThemeDefault();
+            SessionConfig = TradingSessionConfig.GetUSStockDefault();
         }
 
         /// <summary>
@@ -78,9 +75,6 @@ namespace ChartEngine.Controls.ChartControls
         /// </summary>
         public void ApplyDarkTheme()
         {
-            BackgroundStyle.PriceAreaBackColor = Color.FromArgb(20, 20, 20);
-            BackgroundStyle.VolumeAreaBackColor = Color.FromArgb(15, 15, 15);
-
             CandleStyle.UpColor = Color.FromArgb(0, 200, 100);
             CandleStyle.DownColor = Color.FromArgb(255, 80, 80);
             CandleStyle.WickColor = Color.FromArgb(150, 150, 150);
@@ -93,6 +87,7 @@ namespace ChartEngine.Controls.ChartControls
             UpdateGridStyle(GridStyle.GetDarkThemeDefault());
             UpdateAxisStyle(AxisStyle.GetDarkThemeDefault());
             UpdateCrosshairStyle(CrosshairStyle.GetDarkThemeDefault());
+            SessionStyle = SessionStyle.GetDarkThemeDefault();
 
             Invalidate();
         }
@@ -101,10 +96,7 @@ namespace ChartEngine.Controls.ChartControls
         /// 应用亮色主题。
         /// </summary>
         public void ApplyLightTheme()
-        {
-            BackgroundStyle.PriceAreaBackColor = Color.FromArgb(255, 255, 255);
-            BackgroundStyle.VolumeAreaBackColor = Color.FromArgb(250, 250, 250);
-
+        {       
             CandleStyle.UpColor = Color.FromArgb(34, 139, 34);
             CandleStyle.DownColor = Color.FromArgb(220, 20, 60);
             CandleStyle.WickColor = Color.FromArgb(80, 80, 80);
@@ -117,7 +109,7 @@ namespace ChartEngine.Controls.ChartControls
             UpdateGridStyle(GridStyle.GetLightThemeDefault());
             UpdateAxisStyle(AxisStyle.GetLightThemeDefault());
             UpdateCrosshairStyle(CrosshairStyle.GetLightThemeDefault());
-
+            SessionStyle = SessionStyle.GetLightThemeDefault();
             Invalidate();
         }
 
@@ -126,9 +118,6 @@ namespace ChartEngine.Controls.ChartControls
         /// </summary>
         public void ApplyTradingViewTheme()
         {
-            BackgroundStyle.PriceAreaBackColor = Color.FromArgb(19, 23, 34);
-            BackgroundStyle.VolumeAreaBackColor = Color.FromArgb(19, 23, 34);
-
             CandleStyle.UpColor = Color.FromArgb(38, 166, 154);
             CandleStyle.DownColor = Color.FromArgb(239, 83, 80);
             CandleStyle.WickColor = Color.FromArgb(120, 123, 134);
@@ -181,15 +170,6 @@ namespace ChartEngine.Controls.ChartControls
             Invalidate();
         }
 
-        /// <summary>
-        /// 更新背景样式
-        /// </summary>
-        public void UpdateBackgroundStyle(BackgroundStyle style)
-        {
-            if (style == null) return;
-            BackgroundStyle = style;
-            Invalidate();
-        }
 
         /// <summary>
         /// 更新坐标轴样式

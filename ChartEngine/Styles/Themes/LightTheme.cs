@@ -6,19 +6,11 @@ namespace ChartEngine.Styles.Themes
     public class LightTheme : IChartTheme
     {
         public string Name => "Light";
-
-        public BackgroundStyle BackgroundStyle { get; }
         public CandleStyle CandleStyle { get; }
         public VolumeStyle VolumeStyle { get; }
 
         public LightTheme()
         {
-            BackgroundStyle = new BackgroundStyle
-            {
-                PriceAreaBackColor = Color.FromArgb(255, 255, 255),
-                VolumeAreaBackColor = Color.FromArgb(250, 250, 250)
-            };
-
             CandleStyle = new CandleStyle
             {
                 UpColor = Color.FromArgb(34, 139, 34),

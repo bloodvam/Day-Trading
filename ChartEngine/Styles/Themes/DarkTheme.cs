@@ -7,18 +7,11 @@ namespace ChartEngine.Styles.Themes
     {
         public string Name => "Dark";
 
-        public BackgroundStyle BackgroundStyle { get; }
         public CandleStyle CandleStyle { get; }
         public VolumeStyle VolumeStyle { get; }
 
         public DarkTheme()
         {
-            BackgroundStyle = new BackgroundStyle
-            {
-                PriceAreaBackColor = Color.FromArgb(20, 20, 20),
-                VolumeAreaBackColor = Color.FromArgb(15, 15, 15)
-            };
-
             CandleStyle = new CandleStyle
             {
                 UpColor = Color.FromArgb(0, 200, 100),

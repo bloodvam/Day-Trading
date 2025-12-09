@@ -2,7 +2,7 @@
 using System.Linq;
 using ChartEngine.Interfaces;
 using ChartEngine.Rendering.Layers;
-
+using ChartEngine.Rendering.Painters;
 namespace ChartEngine.Controls.ChartControls
 {
     /// <summary>
@@ -25,21 +25,33 @@ namespace ChartEngine.Controls.ChartControls
 
             // 添加图层 (按 ZOrder 自动排序)
             // GridStyle、AxisStyle、CrosshairStyle 从 Styles 模块获取
-            _layers.Add(new BackgroundLayer(BackgroundStyle) { ZOrder = 0 });
-            _layers.Add(new GridLayer(GridStyle) { ZOrder = 1 });
-            _layers.Add(new VolumeLayer() { ZOrder = 10 });
-            _layers.Add(new CandleLayer() { ZOrder = 20 });
-            _layers.Add(new AxisLayer(AxisStyle) { ZOrder = 30 });
-            _layers.Add(new CrosshairLayer(CrosshairStyle) { ZOrder = 100 });
+            _layers.Add(new SessionLayer(SessionStyle, SessionConfig, _resourcePool)
+            { ZOrder = 0 });
+            _layers.Add(new GridLayer(GridStyle, _resourcePool) { ZOrder = 1 });
+            _layers.Add(new VolumeLayer(new VolumePainter(_resourcePool)) { ZOrder = 10 });
+            _layers.Add(new CandleLayer(new CandlePainter(_resourcePool)) { ZOrder = 20 });
+            _layers.Add(new AxisLayer(AxisStyle, _resourcePool) { ZOrder = 30 });
+            _layers.Add(new CrosshairLayer(CrosshairStyle, _resourcePool) { ZOrder = 100 });
 
             // 按 ZOrder 排序
             SortLayersByZOrder();
         }
+        // 🔥 新增：切换 Session 显示
+        public void ToggleSessionLayer()
+        {
+            var layer = GetLayer<SessionLayer>();
+            if (layer != null)
+            {
+                layer.IsVisible = !layer.IsVisible;
+                Invalidate();
+            }
+        }
+    
 
-        /// <summary>
-        /// 向图表添加一个新的图层。
-        /// </summary>
-        public void AddLayer(IChartLayer layer)
+    /// <summary>
+    /// 向图表添加一个新的图层。
+    /// </summary>
+    public void AddLayer(IChartLayer layer)
         {
             if (layer == null) return;
 

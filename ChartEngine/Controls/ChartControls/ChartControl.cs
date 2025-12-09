@@ -46,7 +46,7 @@ namespace ChartEngine.Controls.ChartControls
             TabStop = true; // 允许接收键盘焦点
 
             InitializeStyles();
-            InitializeTransform();
+            InitializeRenderingEngine();
             InitializeLayers();
             InitializeInputHandler();
 
@@ -125,7 +125,7 @@ namespace ChartEngine.Controls.ChartControls
                 // 根据 TimeFrame 计算时间
                 DateTime barTime = startTime.AddMinutes(i * 1); // 1分钟K线
 
-                s.AddBar(open, high, low, close, vol, barTime);
+                s.AddBar(open, high, low, close, vol, barTime, CurrentTimeFrame);
                 price = close;
             }
 

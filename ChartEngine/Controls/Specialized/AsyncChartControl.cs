@@ -5,53 +5,74 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using ChartEngine.Data.Models;
 using ChartEngine.Data.Loading;
-using ChartEngine.Rendering;
 
-namespace ChartEngine.Controls.Specialized
+namespace ChartEngine.Controls.ChartControls
 {
     /// <summary>
-    /// 集成异步加载和脏区域渲染的优化 ChartControl
+    /// 支持异步数据加载的 ChartControl
+    /// 继承自 ChartControl，增加异步加载功能
+    /// 
+    /// 使用示例:
+    /// var chart = new AsyncChartControl();
+    /// chart.LoadProgressChanged += (s, p) => progressBar.Value = p.PercentComplete;
+    /// await chart.LoadDataAsync("AAPL", TimeFrame.Minute1);
     /// </summary>
-    public partial class OptimizedChartControl : Control
+    public class AsyncChartControl : ChartControl
     {
-        // ========== 异步数据加载 ==========
+        #region 字段定义
+
         private readonly IAsyncDataLoader _dataLoader;
         private CancellationTokenSource _loadCancellationTokenSource;
         private bool _isLoading = false;
 
+        #endregion
 
+        #region 事件定义
 
-        // ========== 原有组件 ==========
-        private readonly RenderResourcePool _resourcePool;
-        private ISeries _series;
-        private bool _isDataReady = false;
-
-        // ========== 加载进度 ==========
+        /// <summary>
+        /// 数据加载进度变化事件
+        /// </summary>
         public event EventHandler<DataLoadProgress> LoadProgressChanged;
+
+        /// <summary>
+        /// 数据加载完成事件
+        /// </summary>
         public event EventHandler<ISeries> DataLoadCompleted;
+
+        /// <summary>
+        /// 数据加载失败事件
+        /// </summary>
         public event EventHandler<Exception> DataLoadFailed;
 
-        public OptimizedChartControl()
+        #endregion
+
+        #region 构造函数
+
+        public AsyncChartControl() : base()
         {
-            DoubleBuffered = true; // 仍然启用双缓冲作为后备
-
-            // 初始化组件
-            _resourcePool = new RenderResourcePool();
             _dataLoader = new AsyncDataLoader();
-
-            // 其他初始化...
         }
 
+        #endregion
 
+        #region 公共属性
 
         /// <summary>
         /// 是否正在加载数据
         /// </summary>
         public bool IsLoading => _isLoading;
 
+        #endregion
+
+        #region 异步加载方法
+
         /// <summary>
         /// 异步加载数据
         /// </summary>
+        /// <param name="symbol">股票代码</param>
+        /// <param name="timeFrame">时间周期</param>
+        /// <param name="startDate">起始日期（可选）</param>
+        /// <param name="endDate">结束日期（可选）</param>
         public async Task LoadDataAsync(
             string symbol,
             TimeFrame timeFrame,
@@ -65,7 +86,6 @@ namespace ChartEngine.Controls.Specialized
             }
 
             _isLoading = true;
-            _isDataReady = false;
 
             try
             {
@@ -74,13 +94,13 @@ namespace ChartEngine.Controls.Specialized
                 // 创建进度报告器
                 var progress = new Progress<DataLoadProgress>(p =>
                 {
-                    // 在UI线程触发事件
+                    // 确保在UI线程触发事件
                     if (InvokeRequired)
                     {
                         BeginInvoke(new Action(() =>
                         {
                             LoadProgressChanged?.Invoke(this, p);
-                            Invalidate(); // 触发重绘进度条
+                            Invalidate(); // 触发重绘以显示进度
                         }));
                     }
                     else
@@ -102,10 +122,7 @@ namespace ChartEngine.Controls.Specialized
                 // 在UI线程设置数据
                 if (InvokeRequired)
                 {
-                    Invoke(new Action(() =>
-                    {
-                        SetLoadedData(series);
-                    }));
+                    Invoke(new Action(() => SetLoadedData(series)));
                 }
                 else
                 {
@@ -116,17 +133,17 @@ namespace ChartEngine.Controls.Specialized
             {
                 // 加载被取消
                 _isLoading = false;
+                Invalidate();
             }
             catch (Exception ex)
             {
                 _isLoading = false;
+                Invalidate();
 
+                // 触发失败事件
                 if (InvokeRequired)
                 {
-                    BeginInvoke(new Action(() =>
-                    {
-                        DataLoadFailed?.Invoke(this, ex);
-                    }));
+                    BeginInvoke(new Action(() => DataLoadFailed?.Invoke(this, ex)));
                 }
                 else
                 {
@@ -141,23 +158,7 @@ namespace ChartEngine.Controls.Specialized
         }
 
         /// <summary>
-        /// 设置加载完成的数据
-        /// </summary>
-        private void SetLoadedData(ISeries series)
-        {
-            _series = series;
-            _isDataReady = true;
-            _isLoading = false;
-
-
-            Invalidate();
-
-            // 触发完成事件
-            DataLoadCompleted?.Invoke(this, series);
-        }
-
-        /// <summary>
-        /// 取消数据加载
+        /// 取消当前的数据加载
         /// </summary>
         public void CancelDataLoad()
         {
@@ -165,61 +166,46 @@ namespace ChartEngine.Controls.Specialized
             _dataLoader?.CancelLoad();
         }
 
+        #endregion
 
+        #region 私有方法
 
+        /// <summary>
+        /// 设置加载完成的数据
+        /// </summary>
+        private void SetLoadedData(ISeries series)
+        {
+            // 使用基类的 Series 属性
+            this.Series = series;
 
+            _isLoading = false;
 
+            // 触发完成事件
+            DataLoadCompleted?.Invoke(this, series);
+
+            // 重绘
+            Invalidate();
+        }
+
+        #endregion
+
+        #region 重写 OnPaint
+
+        /// <summary>
+        /// 绘制控件
+        /// 如果正在加载，显示加载界面
+        /// </summary>
         protected override void OnPaint(PaintEventArgs e)
         {
-            base.OnPaint(e);
-
+            // 如果正在加载，显示加载界面
             if (_isLoading)
             {
                 DrawLoadingScreen(e.Graphics);
                 return;
             }
 
-            if (!_isDataReady || _series == null || _series.Count == 0)
-            {
-                DrawNoDataMessage(e.Graphics);
-                return;
-            }
-
-
-            else
-            {
-                RenderFull(e.Graphics);
-            }
-        }
-
-        /// <summary>
-        /// 全屏渲染
-        /// </summary>
-        private void RenderFull(Graphics g)
-        {
-            RenderAllLayers(g);
-        }
-
-        /// <summary>
-        /// 渲染所有图层（实际渲染逻辑）
-        /// </summary>
-        private void RenderAllLayers(Graphics g)
-        {
-            // 这里应该调用原有的渲染逻辑
-            // 例如：RenderAll(g);
-
-            // 简化示例：绘制背景
-            using (var brush = new SolidBrush(Color.FromArgb(20, 20, 20)))
-            {
-                g.FillRectangle(brush, ClientRectangle);
-            }
-
-            // 绘制K线、成交量等...
-            // foreach (var layer in _layers)
-            // {
-            //     if (layer.IsVisible)
-            //         layer.Render(ctx);
-            // }
+            // 否则调用基类的正常渲染
+            base.OnPaint(e);
         }
 
         /// <summary>
@@ -227,12 +213,9 @@ namespace ChartEngine.Controls.Specialized
         /// </summary>
         private void DrawLoadingScreen(Graphics g)
         {
-            // 清除背景
-            g.Clear(Color.FromArgb(20, 20, 20));
-
             // 绘制加载文字
             string message = "正在加载数据...";
-            using (var font = new Font("Arial", 14))
+            using (var font = new Font("Microsoft YaHei", 14))
             using (var brush = new SolidBrush(Color.White))
             {
                 var size = g.MeasureString(message, font);
@@ -241,27 +224,13 @@ namespace ChartEngine.Controls.Specialized
                 g.DrawString(message, font, brush, x, y);
             }
 
-            // 可以绘制进度条
+            // 可以绘制进度条（如果需要的话）
             // DrawProgressBar(g, ...);
         }
 
-        /// <summary>
-        /// 绘制无数据提示
-        /// </summary>
-        private void DrawNoDataMessage(Graphics g)
-        {
-            g.Clear(Color.FromArgb(20, 20, 20));
+        #endregion
 
-            string message = "无数据";
-            using (var font = new Font("Arial", 14))
-            using (var brush = new SolidBrush(Color.Gray))
-            {
-                var size = g.MeasureString(message, font);
-                float x = (Width - size.Width) / 2;
-                float y = (Height - size.Height) / 2;
-                g.DrawString(message, font, brush, x, y);
-            }
-        }
+        #region 资源清理
 
         protected override void Dispose(bool disposing)
         {
@@ -270,12 +239,11 @@ namespace ChartEngine.Controls.Specialized
                 // 取消加载
                 CancelDataLoad();
                 _loadCancellationTokenSource?.Dispose();
-
             }
 
             base.Dispose(disposing);
         }
 
-
+        #endregion
     }
 }

@@ -1,4 +1,5 @@
-﻿using System;
+﻿// ChartEngine/Data/Models/IBar.cs
+using System;
 
 namespace ChartEngine.Data.Models
 {
@@ -13,9 +14,10 @@ namespace ChartEngine.Data.Models
         double Close { get; }
         double Volume { get; }
 
-        /// <summary>
-        /// K线时间戳
-        /// </summary>
+        /// <summary>K线时间戳</summary>
         DateTime Timestamp { get; }
+
+        /// <summary>K线时间周期</summary>
+        TimeFrame TimeFrame { get; }  // 🔥 新增
     }
 }

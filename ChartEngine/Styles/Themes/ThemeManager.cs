@@ -90,9 +90,6 @@ namespace ChartEngine.Styles.Themes
             if (theme == null)
                 throw new ArgumentNullException(nameof(theme));
 
-            chart.BackgroundStyle.PriceAreaBackColor = theme.BackgroundStyle.PriceAreaBackColor;
-            chart.BackgroundStyle.VolumeAreaBackColor = theme.BackgroundStyle.VolumeAreaBackColor;
-
             chart.CandleStyle.UpColor = theme.CandleStyle.UpColor;
             chart.CandleStyle.DownColor = theme.CandleStyle.DownColor;
             chart.CandleStyle.WickColor = theme.CandleStyle.WickColor;

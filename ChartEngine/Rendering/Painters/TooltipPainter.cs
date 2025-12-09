@@ -1,4 +1,5 @@
-﻿using System;
+﻿// ChartEngine/Rendering/Painters/TooltipPainter.cs
+using System;
 using System.Drawing;
 using ChartEngine.Rendering;
 using ChartEngine.Data.Models;
@@ -6,9 +7,6 @@ using ChartEngine.Styles.Core;
 
 namespace ChartEngine.Rendering.Painters
 {
-    /// <summary>
-    /// Tooltip位置枚举
-    /// </summary>
     public enum TooltipPosition
     {
         TopLeft,
@@ -17,13 +15,17 @@ namespace ChartEngine.Rendering.Painters
 
     /// <summary>
     /// Tooltip绘制器
-    /// 负责绘制K线信息悬浮框,支持智能避让
     /// </summary>
     public class TooltipPainter
     {
-        /// <summary>
-        /// 绘制Tooltip
-        /// </summary>
+        private readonly RenderResourcePool _resourcePool;  // 🔥 新增
+
+        // 🔥 新增构造函数
+        public TooltipPainter(RenderResourcePool resourcePool = null)
+        {
+            _resourcePool = resourcePool ?? new RenderResourcePool();
+        }
+
         public void Render(
             Graphics g,
             ChartRenderContext ctx,
@@ -35,26 +37,15 @@ namespace ChartEngine.Rendering.Painters
                 return;
 
             var currentBar = ctx.Series.Bars[barIndex];
-
-            // 获取前一根K线用于计算涨跌
             IBar prevBar = barIndex > 0 ? ctx.Series.Bars[barIndex - 1] : currentBar;
 
-            // 格式化Tooltip内容
             var lines = FormatTooltipContent(currentBar, prevBar);
-
-            // 计算Tooltip尺寸和位置
             var tooltipRect = CalculateTooltipRect(g, ctx, style, lines, position);
 
-            // 绘制背景和边框
             DrawBackground(g, tooltipRect, style);
-
-            // 绘制内容
             DrawContent(g, tooltipRect, style, lines, currentBar, prevBar);
         }
 
-        /// <summary>
-        /// 格式化Tooltip内容
-        /// </summary>
         private string[] FormatTooltipContent(IBar currentBar, IBar prevBar)
         {
             double change = currentBar.Close - prevBar.Close;
@@ -74,9 +65,6 @@ namespace ChartEngine.Rendering.Painters
             };
         }
 
-        /// <summary>
-        /// 计算Tooltip矩形区域
-        /// </summary>
         private Rectangle CalculateTooltipRect(
             Graphics g,
             ChartRenderContext ctx,
@@ -84,7 +72,6 @@ namespace ChartEngine.Rendering.Painters
             string[] lines,
             TooltipPosition position)
         {
-            // 计算最大文字宽度和总高度
             float maxWidth = 0;
             float totalHeight = style.TooltipPadding;
 
@@ -104,13 +91,11 @@ namespace ChartEngine.Rendering.Painters
 
             if (position == TooltipPosition.TopLeft)
             {
-                // 左上角
                 x = ctx.PriceArea.Left + margin;
                 y = ctx.PriceArea.Top + margin;
             }
             else
             {
-                // 右上角
                 x = ctx.PriceArea.Right - width - margin;
                 y = ctx.PriceArea.Top + margin;
             }
@@ -118,27 +103,16 @@ namespace ChartEngine.Rendering.Painters
             return new Rectangle(x, y, width, height);
         }
 
-        /// <summary>
-        /// 绘制背景和边框
-        /// </summary>
         private void DrawBackground(Graphics g, Rectangle rect, CrosshairStyle style)
         {
-            // 绘制背景
-            using (var brush = new SolidBrush(style.TooltipBackColor))
-            {
-                g.FillRectangle(brush, rect);
-            }
+            // 🔥 使用 ResourcePool
+            var brush = _resourcePool.GetBrush(style.TooltipBackColor);
+            g.FillRectangle(brush, rect);
 
-            // 绘制边框
-            using (var pen = new Pen(style.TooltipBorderColor, 1f))
-            {
-                g.DrawRectangle(pen, rect);
-            }
+            var pen = _resourcePool.GetPen(style.TooltipBorderColor, 1f);
+            g.DrawRectangle(pen, rect);
         }
 
-        /// <summary>
-        /// 绘制内容 (带颜色高亮)
-        /// </summary>
         private void DrawContent(
             Graphics g,
             Rectangle rect,
@@ -155,14 +129,13 @@ namespace ChartEngine.Rendering.Painters
                 string line = lines[i];
                 Color textColor = style.NormalColor;
 
-                // 根据行内容决定颜色
                 if (line.Contains("最高:"))
                 {
-                    textColor = style.HighColor; // 绿色
+                    textColor = style.HighColor;
                 }
                 else if (line.Contains("最低:"))
                 {
-                    textColor = style.LowColor; // 红色
+                    textColor = style.LowColor;
                 }
                 else if (line.Contains("涨跌额:") || line.Contains("涨跌幅:"))
                 {
@@ -170,20 +143,15 @@ namespace ChartEngine.Rendering.Painters
                     textColor = change >= 0 ? style.UpColor : style.DownColor;
                 }
 
-                // 绘制文字
-                using (var brush = new SolidBrush(textColor))
-                {
-                    g.DrawString(line, style.TooltipFont, brush, x, y);
-                }
+                // 🔥 使用 ResourcePool
+                var brush = _resourcePool.GetBrush(textColor);
+                g.DrawString(line, style.TooltipFont, brush, x, y);
 
                 var size = g.MeasureString(line, style.TooltipFont);
                 y += size.Height + style.TooltipLineSpacing;
             }
         }
 
-        /// <summary>
-        /// 格式化成交量
-        /// </summary>
         private string FormatVolume(double volume)
         {
             if (volume >= 10000)
@@ -194,32 +162,23 @@ namespace ChartEngine.Rendering.Painters
                 return $"{volume:F0}";
         }
 
-        /// <summary>
-        /// 格式化成交额
-        /// </summary>
         private string FormatAmount(double amount)
         {
-            if (amount >= 100000000) // 亿
+            if (amount >= 100000000)
                 return $"{amount / 100000000:F2}亿";
-            else if (amount >= 10000) // 万
+            else if (amount >= 10000)
                 return $"{amount / 10000:F2}万";
-            else if (amount >= 1000) // 千
+            else if (amount >= 1000)
                 return $"{amount / 1000:F2}千";
             else
                 return $"{amount:F0}";
         }
 
-        /// <summary>
-        /// 检测鼠标是否在Tooltip区域内
-        /// </summary>
         public bool IsMouseOverTooltip(Point mousePos, Rectangle tooltipRect)
         {
             return tooltipRect.Contains(mousePos);
         }
 
-        /// <summary>
-        /// 计算Tooltip应该显示的位置 (用于智能避让)
-        /// </summary>
         public Rectangle GetTooltipRect(
             Graphics g,
             ChartRenderContext ctx,

@@ -147,7 +147,7 @@ namespace ChartEngine.Data.Loading
                 double low = Math.Min(open, close) - rnd.Next(1, 5);
                 double vol = rnd.Next(500, 5000);
 
-                series.AddBar(open, high, low, close, vol, currentTime);
+                series.AddBar(open, high, low, close, vol, currentTime, timeFrame);
 
                 price = close;
                 currentTime = GetNextBarTime(currentTime, timeFrame);
