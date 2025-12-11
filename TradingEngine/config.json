@@ -1,0 +1,17 @@
+﻿{
+    "DasApi": {
+        "Host": "127.0.0.1",
+        "Port": 9090,
+        "User": "19201",
+        "Password": "Dqy32119322",
+        "Account": "TR19201"
+    },
+    "Trading": {
+        "RiskAmount": 10.0,
+        "SpreadPercent": 0.03,
+        "BuyRoute": "VLCTL",
+        "SellRoute": "VLCTL",
+        "StopRoute": "STOP",
+        "DefaultBarInterval": 5
+    }
+}
