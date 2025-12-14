@@ -51,6 +51,7 @@ namespace TradingEngine.Core
         public event Action<Position>? PositionChanged;
         public event Action<Order>? OrderChanged;
         public event Action<Trade>? TradeReceived;
+        public event Action? OrderActionReceived;  // %OrderAct 事件
 
         #endregion
 
@@ -104,6 +105,7 @@ namespace TradingEngine.Core
             _accountManager.PositionChanged += (p) => PositionChanged?.Invoke(p);
             _accountManager.OrderChanged += (o) => OrderChanged?.Invoke(o);
             _accountManager.TradeReceived += (t) => TradeReceived?.Invoke(t);
+            _accountManager.OrderActionReceived += (id, action, qty, price, token) => OrderActionReceived?.Invoke();
 
             // Logging
             _orderManager.Log += (msg) => Log?.Invoke(msg);
@@ -159,6 +161,36 @@ namespace TradingEngine.Core
             await _orderManager.SellAll();
         }
 
+        public async Task SellHalf()
+        {
+            Log?.Invoke("Hotkey: Sell Half triggered");
+            await _orderManager.SellHalf();
+        }
+
+        public async Task Sell70Percent()
+        {
+            Log?.Invoke("Hotkey: Sell 70% triggered");
+            await _orderManager.Sell70Percent();
+        }
+
+        public async Task AddPositionBreakeven()
+        {
+            Log?.Invoke("Hotkey: Add Position (Breakeven) triggered");
+            await _orderManager.AddPositionBreakeven();
+        }
+
+        public async Task AddPositionHalfProfit()
+        {
+            Log?.Invoke("Hotkey: Add Position (Keep 50% Profit) triggered");
+            await _orderManager.AddPositionHalfProfit();
+        }
+
+        public async Task MoveStopToBreakeven()
+        {
+            Log?.Invoke("Hotkey: Move Stop to Breakeven triggered");
+            await _orderManager.MoveStopToBreakeven();
+        }
+
         public async Task CancelAllOrders()
         {
             Log?.Invoke("Cancel all orders");
@@ -185,13 +217,49 @@ namespace TradingEngine.Core
             {
                 await SellAll();
             });
+
+            // Alt+2: Sell Half
+            _hotkeyManager.RegisterHotkey(Keys.D2 | Keys.Alt, async () =>
+            {
+                await SellHalf();
+            });
+
+            // Alt+3: Sell 70%
+            _hotkeyManager.RegisterHotkey(Keys.D3 | Keys.Alt, async () =>
+            {
+                await Sell70Percent();
+            });
+
+            // Shift+Q: Add Position (Breakeven)
+            _hotkeyManager.RegisterHotkey(Keys.Q | Keys.Shift, async () =>
+            {
+                await AddPositionBreakeven();
+            });
+
+            // Shift+W: Add Position (Keep 50% Profit)
+            _hotkeyManager.RegisterHotkey(Keys.W | Keys.Shift, async () =>
+            {
+                await AddPositionHalfProfit();
+            });
+
+            // Space: Move Stop to Breakeven (Average Cost)
+            _hotkeyManager.RegisterHotkey(Keys.Space, async () =>
+            {
+                await MoveStopToBreakeven();
+            });
         }
 
         public void EnableHotkeys(bool enabled)
         {
-            if (_hotkeyManager != null)
-                _hotkeyManager.IsEnabled = enabled;
+            if (_hotkeyManager == null) return;
+
+            if (enabled)
+                _hotkeyManager.ReregisterAll();
+            else
+                _hotkeyManager.UnregisterAll();
         }
+
+        public bool IsHotkeysEnabled => _hotkeyManager?.IsRegistered ?? false;
 
         #endregion
 
@@ -214,6 +282,14 @@ namespace TradingEngine.Core
             return _accountManager.GetAllPositions();
         }
 
+        /// <summary>
+        /// 获取活跃持仓
+        /// </summary>
+        public List<Position> GetActivePositions()
+        {
+            return _accountManager.GetActivePositions();
+        }
+
         public List<Order> GetAllOrders()
         {
             return _accountManager.GetAllOrders();
@@ -222,6 +298,27 @@ namespace TradingEngine.Core
         public List<Order> GetOpenOrders()
         {
             return _accountManager.GetOpenOrders();
+        }
+
+        /// <summary>
+        /// 获取我们追踪的pending订单（只返回Accepted状态的）
+        /// </summary>
+        public List<Order> GetPendingOrders()
+        {
+            var pendingIds = _orderManager.GetPendingOrderIds();
+            var result = new List<Order>();
+
+            foreach (var orderId in pendingIds)
+            {
+                var order = _accountManager.GetOrder(orderId);
+                // 双重检查：确保订单仍然是 Accepted 状态
+                if (order != null && order.Status == Models.OrderStatus.Accepted)
+                {
+                    result.Add(order);
+                }
+            }
+
+            return result;
         }
 
         public List<Trade> GetAllTrades()

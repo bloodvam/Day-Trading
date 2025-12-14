@@ -22,6 +22,11 @@ namespace TradingEngine.Managers
         public event Action<Trade>? TradeReceived;
         public event Action<Order>? OrderExecuted;  // 订单完全成交
 
+        /// <summary>
+        /// %OrderAct 事件: (orderId, actionType, qty, price, token)
+        /// </summary>
+        public event Action<int, string, int, double, int>? OrderActionReceived;
+
         public AccountManager(DasClient client)
         {
             _client = client;
@@ -55,7 +60,6 @@ namespace TradingEngine.Managers
         private void OnOrderUpdate(string line)
         {
             var order = MessageParser.ParseOrder(line);
-
             if (order == null) return;
 
             lock (_lock)
@@ -76,8 +80,10 @@ namespace TradingEngine.Managers
             var action = MessageParser.ParseOrderAction(line);
             if (action == null) return;
 
-            // OrderAction 提供更实时的状态更新
-            // 主要用于跟踪Execute事件
+            var (orderId, actionType, qty, price, token) = action.Value;
+
+            // 触发事件
+            OrderActionReceived?.Invoke(orderId, actionType, qty, price, token);
         }
 
         private void OnTradeUpdate(string line)
@@ -136,6 +142,17 @@ namespace TradingEngine.Managers
             }
         }
 
+        /// <summary>
+        /// 获取活跃持仓（Quantity != 0）
+        /// </summary>
+        public List<Position> GetActivePositions()
+        {
+            lock (_lock)
+            {
+                return _positions.Values.Where(p => p.Quantity != 0).ToList();
+            }
+        }
+
         public Order? GetOrder(int orderId)
         {
             lock (_lock)
@@ -159,8 +176,24 @@ namespace TradingEngine.Managers
                 return _orders.Values
                     .Where(o => o.Status == OrderStatus.Accepted ||
                                 o.Status == OrderStatus.Partial ||
-                                o.Status == OrderStatus.Pending ||
+                                o.Status == OrderStatus.Hold ||
                                 o.Status == OrderStatus.Sending)
+                    .ToList();
+            }
+        }
+
+        /// <summary>
+        /// 获取挂单（Pending orders，包括止损单）
+        /// </summary>
+        public List<Order> GetPendingOrders()
+        {
+            lock (_lock)
+            {
+                return _orders.Values
+                    .Where(o => o.Status == OrderStatus.Accepted ||
+                                o.Status == OrderStatus.Hold ||
+                                o.Status == OrderStatus.Sending ||
+                                o.Status == OrderStatus.Partial)
                     .ToList();
             }
         }

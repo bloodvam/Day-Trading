@@ -365,7 +365,7 @@ namespace TradingEngine.Parsers
         {
             return s switch
             {
-                "Pending" => OrderStatus.Pending,
+                "Hold" => OrderStatus.Hold,
                 "Sending" => OrderStatus.Sending,
                 "Accepted" => OrderStatus.Accepted,
                 "Partial" => OrderStatus.Partial,
@@ -373,7 +373,8 @@ namespace TradingEngine.Parsers
                 "Canceled" => OrderStatus.Canceled,
                 "Rejected" => OrderStatus.Rejected,
                 "Closed" => OrderStatus.Closed,
-                _ => OrderStatus.Pending
+                "Triggered" => OrderStatus.Triggered,
+                _ => OrderStatus.Hold
             };
         }
 

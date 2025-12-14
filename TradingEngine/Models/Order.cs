@@ -18,14 +18,15 @@
 
     public enum OrderStatus
     {
-        Pending,
+        Hold,       // 挂着但还没发到交易所
         Sending,
         Accepted,
         Partial,
         Executed,
         Canceled,
         Rejected,
-        Closed
+        Closed,
+        Triggered   // Auto-route订单已触发
     }
 
     /// <summary>

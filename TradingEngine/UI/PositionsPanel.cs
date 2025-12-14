@@ -1,10 +1,12 @@
 ﻿using TradingEngine.Core;
+using TradingEngine.Models;
 
 namespace TradingEngine.UI
 {
     public class PositionsPanel : BasePanel
     {
         private ListBox _lstPositions;
+        private double _currentBid;
 
         public PositionsPanel(TradingController controller) : base(controller)
         {
@@ -38,14 +40,30 @@ namespace TradingEngine.UI
         {
             Controller.PositionChanged += (pos) => InvokeUI(() => RefreshPositions());
             Controller.LoginSuccess += () => InvokeUI(() => RefreshPositions());
+
+            // 监听 Quote 更新，实时计算盈亏
+            Controller.QuoteUpdated += (quote) => InvokeUI(() =>
+            {
+                _currentBid = quote.Bid;
+                RefreshPositions();
+            });
         }
 
         private void RefreshPositions()
         {
             _lstPositions.Items.Clear();
-            foreach (var pos in Controller.GetAllPositions())
+
+            foreach (var pos in Controller.GetActivePositions())
             {
-                _lstPositions.Items.Add($"{pos.Symbol}: {pos.Quantity}@{pos.AvgCost:F2} P&L:{pos.RealizedPL:F2}");
+                // 用 Bid 计算未实现盈亏
+                double unrealizedPL = 0;
+                if (_currentBid > 0 && pos.Quantity != 0)
+                {
+                    unrealizedPL = (_currentBid - pos.AvgCost) * pos.Quantity;
+                }
+
+                string plColor = unrealizedPL >= 0 ? "+" : "";
+                _lstPositions.Items.Add($"{pos.Symbol}: {pos.Quantity}@{pos.AvgCost:F2} | Unrealized:{plColor}{unrealizedPL:F2} | Realized:{pos.RealizedPL:F2}");
             }
         }
     }

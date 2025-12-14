@@ -3,7 +3,7 @@ using TradingEngine.Core;
 
 namespace TradingEngine
 {
-    public partial class MainForm : Form
+    public class MainForm : Form
     {
         private TradingController _controller = null!;
 
@@ -22,11 +22,19 @@ namespace TradingEngine
             InitializeApp();
         }
 
+        private void InitializeComponent()
+        {
+            this.SuspendLayout();
+            this.AutoScaleDimensions = new SizeF(7F, 15F);
+            this.AutoScaleMode = AutoScaleMode.Font;
+            this.ClientSize = new Size(900, 700);
+            this.Name = "MainForm";
+            this.Text = "Trading Engine";
+            this.ResumeLayout(false);
+        }
+
         private void InitializeApp()
         {
-            // 窗体设置
-            this.Text = "Trading Engine";
-            this.ClientSize = new Size(900, 700);
             this.FormClosing += MainForm_FormClosing;
 
             // 初始化Controller
@@ -105,7 +113,7 @@ namespace TradingEngine
         {
             var lblHotkeys = new Label
             {
-                Text = "Hotkeys: [Shift+1] Buy 1R  |  [Alt+1] Sell All",
+                Text = "Hotkeys: [Shift+1] Buy | [Alt+1] Sell All | [Alt+2] Sell 50% | [Alt+3] Sell 70% | [Space] Stop→BE | [Shift+Q] Add(BE) | [Shift+W] Add(50%)",
                 Dock = DockStyle.Bottom,
                 Height = 25,
                 TextAlign = ContentAlignment.MiddleLeft,

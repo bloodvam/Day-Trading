@@ -18,9 +18,9 @@ namespace TradingEngine.UI
         {
             var lblTitle = new Label
             {
-                Text = "Orders:",
+                Text = "Pending Orders:",
                 Location = new Point(5, 5),
-                Size = new Size(100, 20)
+                Size = new Size(120, 20)
             };
 
             _lstOrders = new ListBox
@@ -37,15 +37,29 @@ namespace TradingEngine.UI
         private void BindEvents()
         {
             Controller.OrderChanged += (order) => InvokeUI(() => RefreshOrders());
+            Controller.OrderActionReceived += () => InvokeUI(() => RefreshOrders());
             Controller.LoginSuccess += () => InvokeUI(() => RefreshOrders());
         }
 
         private void RefreshOrders()
         {
             _lstOrders.Items.Clear();
-            foreach (var order in Controller.GetAllOrders().OrderByDescending(o => o.Time).Take(20))
+
+            foreach (var order in Controller.GetPendingOrders().OrderByDescending(o => o.Time))
             {
-                _lstOrders.Items.Add($"[{order.OrderId}] {order.Symbol} {order.Side} {order.Quantity}@{order.Price:F2} {order.Status}");
+                string typeStr = order.Type switch
+                {
+                    Models.OrderType.StopLimit => "STOP",
+                    Models.OrderType.StopLimitPost => "STOP",
+                    Models.OrderType.StopMarket => "STOP",
+                    _ => "LMT"
+                };
+
+                string priceStr = order.StopPrice > 0
+                    ? $"Stop@{order.StopPrice:F2}"
+                    : $"@{order.Price:F2}";
+
+                _lstOrders.Items.Add($"[{order.OrderId}] {order.Symbol} {order.Side} {order.LeftQuantity}/{order.Quantity} {typeStr} {priceStr} {order.Status}");
             }
         }
     }

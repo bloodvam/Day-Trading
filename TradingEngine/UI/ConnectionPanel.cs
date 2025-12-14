@@ -5,6 +5,7 @@ namespace TradingEngine.UI
     public class ConnectionPanel : BasePanel
     {
         private Button _btnConnect;
+        private Button _btnToggleHotkeys;
         private Label _lblStatus;
 
         public ConnectionPanel(TradingController controller) : base(controller)
@@ -28,12 +29,22 @@ namespace TradingEngine.UI
             {
                 Text = "Disconnected",
                 Location = new Point(100, 16),
-                Size = new Size(200, 20),
+                Size = new Size(150, 20),
                 ForeColor = Color.Red
             };
 
+            _btnToggleHotkeys = new Button
+            {
+                Text = "Disable Hotkeys",
+                Location = new Point(260, 12),
+                Size = new Size(110, 25),
+                FlatStyle = FlatStyle.Flat
+            };
+            _btnToggleHotkeys.Click += BtnToggleHotkeys_Click;
+
             this.Controls.Add(_btnConnect);
             this.Controls.Add(_lblStatus);
+            this.Controls.Add(_btnToggleHotkeys);
         }
 
         private void BindEvents()
@@ -91,6 +102,16 @@ namespace TradingEngine.UI
                     _btnConnect.Enabled = true;
                 }
             }
+        }
+
+        private void BtnToggleHotkeys_Click(object? sender, EventArgs e)
+        {
+            bool currentlyEnabled = Controller.IsHotkeysEnabled;
+            Controller.EnableHotkeys(!currentlyEnabled);
+
+            bool newState = Controller.IsHotkeysEnabled;
+            _btnToggleHotkeys.Text = newState ? "Disable Hotkeys" : "Enable Hotkeys";
+            _btnToggleHotkeys.BackColor = newState ? SystemColors.Control : Color.LightCoral;
         }
     }
 }
