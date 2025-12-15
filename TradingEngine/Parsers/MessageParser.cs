@@ -68,6 +68,17 @@ namespace TradingEngine.Parsers
                     case "VWAP":
                         quote.VWAP = ParseDouble(value);
                         break;
+                    case "T":
+                        // 格式 HHMMSS，如 "093015" = 09:30:15
+                        if (value.Length >= 6)
+                        {
+                            int hh = int.Parse(value.Substring(0, 2));
+                            int mm = int.Parse(value.Substring(2, 2));
+                            int ss = int.Parse(value.Substring(4, 2));
+                            var today = DateTime.Today;
+                            quote.UpdateTime = new DateTime(today.Year, today.Month, today.Day, hh, mm, ss);
+                        }
+                        break;
                 }
             }
         }

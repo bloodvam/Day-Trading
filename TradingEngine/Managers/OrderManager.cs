@@ -124,6 +124,57 @@ namespace TradingEngine.Managers
         }
 
         /// <summary>
+        /// 计算止损价 - 智能判断使用当前bar还是前一根bar的Low
+        /// 条件1：任何时候，bid <= currentBar.Low → 用前一根bar
+        /// 条件2：新bar的第0秒内，bid - currentBar.Low <= 0.01 → 用前一根bar
+        /// </summary>
+        private (double stopPrice, bool usedLastBar) GetSmartStopPrice(string symbol, double bid)
+        {
+            var currentBar = _barAggregator.GetCurrentBar(symbol);
+            var lastBar = _barAggregator.GetLastCompletedBar(symbol);
+            var quote = _subscriptionManager.GetCurrentQuote();
+
+            if (currentBar == null || currentBar.Low <= 0)
+            {
+                return (0, false);
+            }
+
+            double currentLow = currentBar.Low;
+            double stopPrice = currentLow;
+            bool usedLastBar = false;
+
+            // 条件1：任何时候，bid <= currentBar.Low
+            if (bid <= currentLow)
+            {
+                if (lastBar != null && lastBar.Low > 0)
+                {
+                    stopPrice = lastBar.Low;
+                    usedLastBar = true;
+                    Log?.Invoke($"[StopLogic] bid({bid:F2}) <= currentLow({currentLow:F2}), using lastBar.Low({stopPrice:F2})");
+                }
+            }
+            // 条件2：新bar的第0秒内，bid - currentBar.Low <= 0.01
+            else if (lastBar != null && lastBar.Low > 0 && quote != null)
+            {
+                int barInterval = currentBar.IntervalSeconds;
+                double quoteSeconds = quote.UpdateTime.TimeOfDay.TotalSeconds;
+                double elapsed = quoteSeconds % barInterval;
+
+                // elapsed == 0 表示在第0秒（即前1秒内）
+                bool isFirstSecond = (elapsed == 0);
+
+                if (isFirstSecond && (bid - currentLow) <= 0.01)
+                {
+                    stopPrice = lastBar.Low;
+                    usedLastBar = true;
+                    Log?.Invoke($"[StopLogic] In first second, bid-low({bid - currentLow:F4}) <= 0.01, using lastBar.Low({stopPrice:F2})");
+                }
+            }
+
+            return (stopPrice, usedLastBar);
+        }
+
+        /// <summary>
         /// 买入1R仓位（热键触发）
         /// </summary>
         public async Task<bool> BuyOneR()
@@ -138,7 +189,7 @@ namespace TradingEngine.Managers
             }
 
             var quote = _subscriptionManager.GetCurrentQuote();
-            if (quote == null || quote.Ask <= 0)
+            if (quote == null || quote.Ask <= 0 || quote.Bid <= 0)
             {
                 Log?.Invoke($"No valid quote for {symbol}");
                 return false;
@@ -152,12 +203,21 @@ namespace TradingEngine.Managers
             }
 
             double askPrice = quote.Ask;
-            double stopPrice = currentBar.Low;
+            double bidPrice = quote.Bid;
+
+            // 智能计算止损价
+            var (stopPrice, usedLastBar) = GetSmartStopPrice(symbol, bidPrice);
+            if (stopPrice <= 0)
+            {
+                Log?.Invoke($"Cannot determine stop price for {symbol}");
+                return false;
+            }
+
             double riskPerShare = askPrice - stopPrice;
 
             if (riskPerShare <= 0)
             {
-                Log?.Invoke($"Invalid risk: Ask={askPrice}, BarLow={stopPrice}");
+                Log?.Invoke($"Invalid risk: Ask={askPrice:F2}, Stop={stopPrice:F2}");
                 return false;
             }
 
@@ -180,7 +240,8 @@ namespace TradingEngine.Managers
                 _pendingStops[token] = (stopPrice, currentBar.Clone());
             }
 
-            Log?.Invoke($"BUY {symbol} {shares}@{limitPrice:F2} (Ask={askPrice:F2}, Stop={stopPrice:F2}, Token={token})");
+            string barInfo = usedLastBar ? "LastBar" : "CurrentBar";
+            Log?.Invoke($"BUY {symbol} {shares}@{limitPrice:F2} (Ask={askPrice:F2}, Stop={stopPrice:F2} [{barInfo}], Token={token})");
 
             await _client.PlaceLimitOrder(
                 token,
@@ -402,7 +463,14 @@ namespace TradingEngine.Managers
             int currentQty = position.Quantity;
             double bidPrice = quote.Bid;
             double askPrice = quote.Ask;
-            double stopPrice = currentBar.Low;
+
+            // 智能计算止损价
+            var (stopPrice, usedLastBar) = GetSmartStopPrice(symbol, bidPrice);
+            if (stopPrice <= 0)
+            {
+                Log?.Invoke($"Cannot determine stop price for {symbol}");
+                return false;
+            }
 
             // 当前浮盈
             double currentProfit = (bidPrice - avgCost) * currentQty;
@@ -456,9 +524,10 @@ namespace TradingEngine.Managers
             }
 
             string mode = profitRatio == 0 ? "BREAKEVEN" : $"KEEP {profitRatio * 100:F0}% PROFIT";
+            string barInfo = usedLastBar ? "LastBar" : "CurrentBar";
             Log?.Invoke($"ADD {symbol} {sharesToAdd}@{limitPrice:F2} ({mode}, Token={token})");
             Log?.Invoke($"  Current: {currentQty}@{avgCost:F2}, Profit={currentProfit:F2}");
-            Log?.Invoke($"  New Stop={stopPrice:F2}, TargetProfit={targetProfit:F2}");
+            Log?.Invoke($"  New Stop={stopPrice:F2} [{barInfo}], TargetProfit={targetProfit:F2}");
 
             // 先取消旧止损单，避免加仓期间被止损出场变成空单
             await CancelStopOrders(symbol);
