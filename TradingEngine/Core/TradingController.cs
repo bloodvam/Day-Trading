@@ -49,9 +49,8 @@ namespace TradingEngine.Core
 
         public event Action<AccountInfo>? AccountInfoChanged;
         public event Action<Position>? PositionChanged;
-        public event Action<Order>? OrderChanged;
-        public event Action<Trade>? TradeReceived;
-        public event Action? OrderActionReceived;  // %OrderAct 事件
+        public event Action<Order>? OrderAdded;
+        public event Action<Order>? OrderRemoved;
 
         #endregion
 
@@ -103,14 +102,13 @@ namespace TradingEngine.Core
             // Account events
             _accountManager.AccountInfoChanged += (a) => AccountInfoChanged?.Invoke(a);
             _accountManager.PositionChanged += (p) => PositionChanged?.Invoke(p);
-            _accountManager.OrderChanged += (o) => OrderChanged?.Invoke(o);
-            _accountManager.TradeReceived += (t) => TradeReceived?.Invoke(t);
-            _accountManager.OrderActionReceived += (id, action, qty, price, token) => OrderActionReceived?.Invoke();
+            _accountManager.OrderAdded += (o) => OrderAdded?.Invoke(o);
+            _accountManager.OrderRemoved += (o) => OrderRemoved?.Invoke(o);
 
             // Logging
             _orderManager.Log += (msg) => Log?.Invoke(msg);
             _client.RawMessage += (msg) => RawMessage?.Invoke(msg);
-            _client.CommandSent += (msg) => Log?.Invoke(msg);  // 打印发送的命令
+            _client.CommandSent += (msg) => Log?.Invoke(msg);
         }
 
         #region Connection
@@ -277,53 +275,20 @@ namespace TradingEngine.Core
             return _barAggregator.GetCurrentBar(symbol);
         }
 
+        /// <summary>
+        /// 获取所有持仓（Quantity != 0）
+        /// </summary>
         public List<Position> GetAllPositions()
         {
             return _accountManager.GetAllPositions();
         }
 
         /// <summary>
-        /// 获取活跃持仓
+        /// 获取所有挂单（Accepted 状态）
         /// </summary>
-        public List<Position> GetActivePositions()
-        {
-            return _accountManager.GetActivePositions();
-        }
-
         public List<Order> GetAllOrders()
         {
             return _accountManager.GetAllOrders();
-        }
-
-        public List<Order> GetOpenOrders()
-        {
-            return _accountManager.GetOpenOrders();
-        }
-
-        /// <summary>
-        /// 获取我们追踪的pending订单（只返回Accepted状态的）
-        /// </summary>
-        public List<Order> GetPendingOrders()
-        {
-            var pendingIds = _orderManager.GetPendingOrderIds();
-            var result = new List<Order>();
-
-            foreach (var orderId in pendingIds)
-            {
-                var order = _accountManager.GetOrder(orderId);
-                // 双重检查：确保订单仍然是 Accepted 状态
-                if (order != null && order.Status == Models.OrderStatus.Accepted)
-                {
-                    result.Add(order);
-                }
-            }
-
-            return result;
-        }
-
-        public List<Trade> GetAllTrades()
-        {
-            return _accountManager.GetAllTrades();
         }
 
         /// <summary>

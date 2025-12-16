@@ -141,17 +141,43 @@ namespace TradingEngine.Parsers
 
             try
             {
+                // 解析 Type 字段，可能是 "L", "M", "SL:160", "STOPLMTP:160" 等
+                string typeField = parts[5];
+                OrderType orderType;
+                double stopPrice = 0;
+
+                if (typeField.StartsWith("SL:"))
+                {
+                    orderType = OrderType.StopLimit;
+                    stopPrice = ParseDouble(typeField.Substring(3));
+                }
+                else if (typeField.StartsWith("STOPLMTP:"))
+                {
+                    orderType = OrderType.StopLimitPost;
+                    stopPrice = ParseDouble(typeField.Substring(9));
+                }
+                else if (typeField.StartsWith("STOPMKT:"))
+                {
+                    orderType = OrderType.StopMarket;
+                    stopPrice = ParseDouble(typeField.Substring(8));
+                }
+                else
+                {
+                    orderType = ParseOrderType(typeField);
+                }
+
                 var order = new Order
                 {
                     OrderId = ParseInt(parts[1]),
                     Token = ParseInt(parts[2]),
                     Symbol = parts[3],
                     Side = ParseSide(parts[4]),
-                    Type = ParseOrderType(parts[5]),
+                    Type = orderType,
                     Quantity = ParseInt(parts[6]),
                     LeftQuantity = ParseInt(parts[7]),
                     CanceledQuantity = ParseInt(parts[8]),
                     Price = ParseDouble(parts[9]),
+                    StopPrice = stopPrice,
                     Route = parts[10],
                     Status = ParseOrderStatus(parts[11]),
                     Time = ParseTime(parts[12])

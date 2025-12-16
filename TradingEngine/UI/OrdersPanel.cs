@@ -36,8 +36,9 @@ namespace TradingEngine.UI
 
         private void BindEvents()
         {
-            Controller.OrderChanged += (order) => InvokeUI(() => RefreshOrders());
-            Controller.OrderActionReceived += () => InvokeUI(() => RefreshOrders());
+            // 监听订单添加/移除
+            Controller.OrderAdded += (order) => InvokeUI(() => RefreshOrders());
+            Controller.OrderRemoved += (order) => InvokeUI(() => RefreshOrders());
             Controller.LoginSuccess += () => InvokeUI(() => RefreshOrders());
         }
 
@@ -45,21 +46,23 @@ namespace TradingEngine.UI
         {
             _lstOrders.Items.Clear();
 
-            foreach (var order in Controller.GetPendingOrders().OrderByDescending(o => o.Time))
+            // GetAllOrders 已经只返回 Accepted 状态的订单
+            foreach (var order in Controller.GetAllOrders().OrderByDescending(o => o.Time))
             {
                 string typeStr = order.Type switch
                 {
                     Models.OrderType.StopLimit => "STOP",
                     Models.OrderType.StopLimitPost => "STOP",
                     Models.OrderType.StopMarket => "STOP",
+                    Models.OrderType.Market => "MKT",
                     _ => "LMT"
                 };
 
                 string priceStr = order.StopPrice > 0
-                    ? $"Stop@{order.StopPrice:F2}"
+                    ? $"Trigger@{order.StopPrice:F2} Limit@{order.Price:F2}"
                     : $"@{order.Price:F2}";
 
-                _lstOrders.Items.Add($"[{order.OrderId}] {order.Symbol} {order.Side} {order.LeftQuantity}/{order.Quantity} {typeStr} {priceStr} {order.Status}");
+                _lstOrders.Items.Add($"[{order.OrderId}] {order.Symbol} {order.Side} {order.LeftQuantity}/{order.Quantity} {typeStr} {priceStr}");
             }
         }
     }

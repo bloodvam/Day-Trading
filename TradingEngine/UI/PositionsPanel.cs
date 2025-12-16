@@ -38,6 +38,7 @@ namespace TradingEngine.UI
 
         private void BindEvents()
         {
+            // 监听 Position 变化（添加/更新/移除都会触发）
             Controller.PositionChanged += (pos) => InvokeUI(() => RefreshPositions());
             Controller.LoginSuccess += () => InvokeUI(() => RefreshPositions());
 
@@ -53,7 +54,8 @@ namespace TradingEngine.UI
         {
             _lstPositions.Items.Clear();
 
-            foreach (var pos in Controller.GetActivePositions())
+            // GetAllPositions 已经只返回 Quantity != 0 的
+            foreach (var pos in Controller.GetAllPositions())
             {
                 // 用 Bid 计算未实现盈亏
                 double unrealizedPL = 0;
@@ -62,8 +64,8 @@ namespace TradingEngine.UI
                     unrealizedPL = (_currentBid - pos.AvgCost) * pos.Quantity;
                 }
 
-                string plColor = unrealizedPL >= 0 ? "+" : "";
-                _lstPositions.Items.Add($"{pos.Symbol}: {pos.Quantity}@{pos.AvgCost:F2} | Unrealized:{plColor}{unrealizedPL:F2} | Realized:{pos.RealizedPL:F2}");
+                string plSign = unrealizedPL >= 0 ? "+" : "";
+                _lstPositions.Items.Add($"{pos.Symbol}: {pos.Quantity}@{pos.AvgCost:F2} | Unrealized:{plSign}{unrealizedPL:F2} | Realized:{pos.RealizedPL:F2}");
             }
         }
     }

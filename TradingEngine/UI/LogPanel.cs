@@ -55,10 +55,15 @@ namespace TradingEngine.UI
             Controller.Log += (msg) => InvokeUI(() => AddLog(msg));
             Controller.RawMessage += (msg) => InvokeUI(() =>
             {
-                // 只显示 %OrderAct 消息
-                if (msg.StartsWith("%OrderAct"))
+                // 打印初始化数据和订单相关消息
+                if (msg.StartsWith("%POS") || msg.StartsWith("#POS") ||
+                    msg.StartsWith("%ORDER") || msg.StartsWith("#Order") ||
+                    msg.StartsWith("%TRADE") || msg.StartsWith("#Trade") ||
+                    msg.StartsWith("%OrderAct") ||
+                    msg.StartsWith("$AccountInfo") ||
+                    msg.StartsWith("BP "))
                 {
-                    AddLog($"[OrderAct] {msg}");
+                    AddLog($"[RAW] {msg}");
                 }
             });
         }
