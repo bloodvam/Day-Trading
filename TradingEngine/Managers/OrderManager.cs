@@ -38,6 +38,7 @@ namespace TradingEngine.Managers
         private string? _pendingMoveStopSymbol;
 
         public event Action<string>? Log;
+        public event Action<int>? NewOrderSent;  // 发送 NEWORDER 时触发，参数是 token
 
         public OrderManager(
             DasClient client,
@@ -142,6 +143,7 @@ namespace TradingEngine.Managers
             var config = AppConfig.Instance.Trading;
             int token = GetNextToken();
 
+            NewOrderSent?.Invoke(token);
             await _client.PlaceLimitOrder(
                 token,
                 "S",
@@ -312,6 +314,7 @@ namespace TradingEngine.Managers
             string barInfo = usedLastBar ? "LastBar" : "CurrentBar";
             Log?.Invoke($"BUY {symbol} {shares}@{limitPrice:F2} (Ask={askPrice:F2}, Stop={stopPrice:F2} [{barInfo}], Token={token})");
 
+            NewOrderSent?.Invoke(token);
             await _client.PlaceLimitOrder(
                 token,
                 "B",
@@ -384,6 +387,7 @@ namespace TradingEngine.Managers
             {
                 // 没有止损单，直接卖
                 int token = GetNextToken();
+                NewOrderSent?.Invoke(token);
                 await _client.PlaceLimitOrder(
                     token,
                     "S",
@@ -479,6 +483,7 @@ namespace TradingEngine.Managers
                 // 没有止损单，直接卖
                 Log?.Invoke($"No stop order found, selling directly");
                 int token = GetNextToken();
+                NewOrderSent?.Invoke(token);
                 await _client.PlaceLimitOrder(
                     token,
                     "S",
@@ -661,6 +666,7 @@ namespace TradingEngine.Managers
                 await _client.CancelOrder(stopOrder.OrderId);
             }
 
+            NewOrderSent?.Invoke(token);
             await _client.PlaceLimitOrder(
                 token,
                 "B",
@@ -691,6 +697,7 @@ namespace TradingEngine.Managers
 
             Log?.Invoke($"STOP {symbol} {shares}@{stopPrice:F2} (Limit={limitPrice:F2}, Token={token})");
 
+            NewOrderSent?.Invoke(token);
             await _client.PlaceStopLimitPostOrder(
                 token,
                 "S",

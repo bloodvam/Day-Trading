@@ -54,6 +54,13 @@ namespace TradingEngine.Core
 
         #endregion
 
+        #region Events - Order Tracking
+
+        public event Action? NewOperationStarted;  // 用户按热键开始新操作
+        public event Action<int>? NewOrderSent;    // 发送 NEWORDER，参数是 token
+
+        #endregion
+
         #region Events - Logging
 
         public event Action<string>? Log;
@@ -110,6 +117,9 @@ namespace TradingEngine.Core
             _orderManager.Log += (msg) => Log?.Invoke(msg);
             _client.RawMessage += (msg) => RawMessage?.Invoke(msg);
             _client.CommandSent += (msg) => CommandSent?.Invoke(msg);
+
+            // Order tracking
+            _orderManager.NewOrderSent += (token) => NewOrderSent?.Invoke(token);
         }
 
         #region Connection
@@ -150,49 +160,48 @@ namespace TradingEngine.Core
 
         public async Task BuyOneR()
         {
-            Log?.Invoke("Hotkey: Buy 1R triggered");
+            NewOperationStarted?.Invoke();
             await _orderManager.BuyOneR();
         }
 
         public async Task SellAll()
         {
-            Log?.Invoke("Hotkey: Sell All triggered");
+            NewOperationStarted?.Invoke();
             await _orderManager.SellAll();
         }
 
         public async Task SellHalf()
         {
-            Log?.Invoke("Hotkey: Sell Half triggered");
+            NewOperationStarted?.Invoke();
             await _orderManager.SellHalf();
         }
 
         public async Task Sell70Percent()
         {
-            Log?.Invoke("Hotkey: Sell 70% triggered");
+            NewOperationStarted?.Invoke();
             await _orderManager.Sell70Percent();
         }
 
         public async Task AddPositionBreakeven()
         {
-            Log?.Invoke("Hotkey: Add Position (Breakeven) triggered");
+            NewOperationStarted?.Invoke();
             await _orderManager.AddPositionBreakeven();
         }
 
         public async Task AddPositionHalfProfit()
         {
-            Log?.Invoke("Hotkey: Add Position (Keep 50% Profit) triggered");
+            NewOperationStarted?.Invoke();
             await _orderManager.AddPositionHalfProfit();
         }
 
         public async Task MoveStopToBreakeven()
         {
-            Log?.Invoke("Hotkey: Move Stop to Breakeven triggered");
+            NewOperationStarted?.Invoke();
             await _orderManager.MoveStopToBreakeven();
         }
 
         public async Task CancelAllOrders()
         {
-            Log?.Invoke("Cancel all orders");
             await _orderManager.CancelAllOrders();
         }
 
