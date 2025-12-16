@@ -1,15 +1,20 @@
 ﻿using TradingEngine.Core;
+using TradingEngine.Managers;
 
 namespace TradingEngine.UI
 {
     public class LogPanel : BasePanel
     {
-        private ListBox _lstLog;
+        private RichTextBox _txtLog;
         private Button _btnClear;
+        private readonly LogManager _logManager;
+
+        public LogManager LogManager => _logManager;
 
         public LogPanel(TradingController controller) : base(controller)
         {
             this.Dock = DockStyle.Fill;
+            _logManager = new LogManager();
             BuildUI();
             BindEvents();
         }
@@ -35,49 +40,59 @@ namespace TradingEngine.UI
                 Location = new Point(45, 0),
                 Size = new Size(50, 23)
             };
-            _btnClear.Click += (s, e) => _lstLog.Items.Clear();
+            _btnClear.Click += (s, e) => _txtLog.Clear();
 
             topPanel.Controls.Add(lblTitle);
             topPanel.Controls.Add(_btnClear);
 
-            _lstLog = new ListBox
+            _txtLog = new RichTextBox
             {
                 Dock = DockStyle.Fill,
-                Font = new Font("Consolas", 9)
+                Font = new Font("Consolas", 9),
+                ReadOnly = true,
+                BackColor = Color.White
             };
 
-            this.Controls.Add(_lstLog);
+            this.Controls.Add(_txtLog);
             this.Controls.Add(topPanel);
         }
 
         private void BindEvents()
         {
-            Controller.Log += (msg) => InvokeUI(() => AddLog(msg));
-            Controller.RawMessage += (msg) => InvokeUI(() =>
-            {
-                // 打印初始化数据和订单相关消息
-                if (msg.StartsWith("%POS") || msg.StartsWith("#POS") ||
-                    msg.StartsWith("%ORDER") || msg.StartsWith("#Order") ||
-                    msg.StartsWith("%TRADE") || msg.StartsWith("#Trade") ||
-                    msg.StartsWith("%OrderAct") ||
-                    msg.StartsWith("$AccountInfo") ||
-                    msg.StartsWith("BP "))
-                {
-                    AddLog($"[RAW] {msg}");
-                }
-            });
+            // 初始化 LogManager
+            _logManager.Initialize(Controller);
+
+            // 监听 LogManager 的日志事件
+            _logManager.LogReceived += (msg, level) => InvokeUI(() => AddLog(msg, level));
         }
 
-        public void AddLog(string message)
+        public void AddLog(string message, LogLevel level = LogLevel.Normal)
         {
-            string line = $"[{DateTime.Now:HH:mm:ss}] {message}";
-            _lstLog.Items.Add(line);
-            _lstLog.TopIndex = _lstLog.Items.Count - 1;
+            string line = $"[{DateTime.Now:HH:mm:ss}] {message}\n";
 
-            // 限制日志数量
-            while (_lstLog.Items.Count > 500)
+            Color color = level switch
             {
-                _lstLog.Items.RemoveAt(0);
+                LogLevel.Success => Color.DarkGreen,
+                LogLevel.Error => Color.Red,
+                _ => Color.Black
+            };
+
+            _txtLog.SelectionStart = _txtLog.TextLength;
+            _txtLog.SelectionLength = 0;
+            _txtLog.SelectionColor = color;
+            _txtLog.AppendText(line);
+            _txtLog.SelectionColor = Color.Black;
+
+            // 滚动到底部
+            _txtLog.SelectionStart = _txtLog.TextLength;
+            _txtLog.ScrollToCaret();
+
+            // 限制日志行数
+            if (_txtLog.Lines.Length > 500)
+            {
+                _txtLog.SelectionStart = 0;
+                _txtLog.SelectionLength = _txtLog.GetFirstCharIndexFromLine(100);
+                _txtLog.SelectedText = "";
             }
         }
     }

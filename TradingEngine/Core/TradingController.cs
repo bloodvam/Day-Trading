@@ -58,6 +58,7 @@ namespace TradingEngine.Core
 
         public event Action<string>? Log;
         public event Action<string>? RawMessage;
+        public event Action<string>? CommandSent;
 
         public void LogMessage(string message)
         {
@@ -108,7 +109,7 @@ namespace TradingEngine.Core
             // Logging
             _orderManager.Log += (msg) => Log?.Invoke(msg);
             _client.RawMessage += (msg) => RawMessage?.Invoke(msg);
-            _client.CommandSent += (msg) => Log?.Invoke(msg);
+            _client.CommandSent += (msg) => CommandSent?.Invoke(msg);
         }
 
         #region Connection
@@ -199,52 +200,33 @@ namespace TradingEngine.Core
 
         #region Hotkeys
 
-        public void SetupHotkeys(Form form)
+        /// <summary>
+        /// 设置热键，返回 (allSuccess, failedKey)
+        /// </summary>
+        public (bool allSuccess, string? failedKey) SetupHotkeys(Form form)
         {
             _hotkeyManager = new HotkeyManager(form);
-            _hotkeyManager.Log += (msg) => Log?.Invoke(msg);
 
-            // Shift+1: Buy 1R
-            _hotkeyManager.RegisterHotkey(Keys.D1 | Keys.Shift, async () =>
+            var hotkeys = new List<(Keys key, string name, Action action)>
             {
-                await BuyOneR();
-            });
+                (Keys.D1 | Keys.Shift, "Shift+1", async () => await BuyOneR()),
+                (Keys.D1 | Keys.Alt, "Alt+1", async () => await SellAll()),
+                (Keys.D2 | Keys.Alt, "Alt+2", async () => await SellHalf()),
+                (Keys.D3 | Keys.Alt, "Alt+3", async () => await Sell70Percent()),
+                (Keys.Q | Keys.Shift, "Shift+Q", async () => await AddPositionBreakeven()),
+                (Keys.W | Keys.Shift, "Shift+W", async () => await AddPositionHalfProfit()),
+                (Keys.Space, "Space", async () => await MoveStopToBreakeven())
+            };
 
-            // Alt+1: Sell All
-            _hotkeyManager.RegisterHotkey(Keys.D1 | Keys.Alt, async () =>
+            foreach (var (key, name, action) in hotkeys)
             {
-                await SellAll();
-            });
+                if (!_hotkeyManager.RegisterHotkey(key, action))
+                {
+                    return (false, name);
+                }
+            }
 
-            // Alt+2: Sell Half
-            _hotkeyManager.RegisterHotkey(Keys.D2 | Keys.Alt, async () =>
-            {
-                await SellHalf();
-            });
-
-            // Alt+3: Sell 70%
-            _hotkeyManager.RegisterHotkey(Keys.D3 | Keys.Alt, async () =>
-            {
-                await Sell70Percent();
-            });
-
-            // Shift+Q: Add Position (Breakeven)
-            _hotkeyManager.RegisterHotkey(Keys.Q | Keys.Shift, async () =>
-            {
-                await AddPositionBreakeven();
-            });
-
-            // Shift+W: Add Position (Keep 50% Profit)
-            _hotkeyManager.RegisterHotkey(Keys.W | Keys.Shift, async () =>
-            {
-                await AddPositionHalfProfit();
-            });
-
-            // Space: Move Stop to Breakeven (Average Cost)
-            _hotkeyManager.RegisterHotkey(Keys.Space, async () =>
-            {
-                await MoveStopToBreakeven();
-            });
+            return (true, null);
         }
 
         public void EnableHotkeys(bool enabled)

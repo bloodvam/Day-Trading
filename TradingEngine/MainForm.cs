@@ -46,8 +46,9 @@ namespace TradingEngine
             // 布局
             LayoutPanels();
 
-            // 设置热键
-            _controller.SetupHotkeys(this);
+            // 设置热键并记录结果
+            var (allSuccess, failedKey) = _controller.SetupHotkeys(this);
+            _logPanel.LogManager.LogHotkeyResult(allSuccess, failedKey);
 
             // 添加热键提示
             AddHotkeyHint();
