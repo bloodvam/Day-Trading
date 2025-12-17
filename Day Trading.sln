@@ -3,11 +3,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.2.32616.157
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "das pre market app", "das pre market app\das pre market app.csproj", "{B4B4F946-3C2A-403F-B961-7223D0C3CB4D}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PreMarketTrader.ChartApp", "PreMarketTrader.ChartApp\PreMarketTrader.ChartApp.csproj", "{749505B4-6E4A-41D5-B73F-1F962CFEDAE9}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ChartEngine", "ChartEngine\ChartEngine.csproj", "{3D45D6EE-84C7-4859-BA37-C8589DCDDB30}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TradingEngine", "TradingEngine\TradingEngine.csproj", "{09F9760B-EBB2-376D-0EEE-58FB95CE5297}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -15,18 +13,14 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{B4B4F946-3C2A-403F-B961-7223D0C3CB4D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{B4B4F946-3C2A-403F-B961-7223D0C3CB4D}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{B4B4F946-3C2A-403F-B961-7223D0C3CB4D}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{B4B4F946-3C2A-403F-B961-7223D0C3CB4D}.Release|Any CPU.Build.0 = Release|Any CPU
-		{749505B4-6E4A-41D5-B73F-1F962CFEDAE9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{749505B4-6E4A-41D5-B73F-1F962CFEDAE9}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{749505B4-6E4A-41D5-B73F-1F962CFEDAE9}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{749505B4-6E4A-41D5-B73F-1F962CFEDAE9}.Release|Any CPU.Build.0 = Release|Any CPU
 		{3D45D6EE-84C7-4859-BA37-C8589DCDDB30}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{3D45D6EE-84C7-4859-BA37-C8589DCDDB30}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{3D45D6EE-84C7-4859-BA37-C8589DCDDB30}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{3D45D6EE-84C7-4859-BA37-C8589DCDDB30}.Release|Any CPU.Build.0 = Release|Any CPU
+		{09F9760B-EBB2-376D-0EEE-58FB95CE5297}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{09F9760B-EBB2-376D-0EEE-58FB95CE5297}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{09F9760B-EBB2-376D-0EEE-58FB95CE5297}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{09F9760B-EBB2-376D-0EEE-58FB95CE5297}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
