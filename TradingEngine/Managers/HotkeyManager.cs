@@ -28,6 +28,9 @@ namespace TradingEngine.Managers
         private int _hotkeyIdCounter = 0;
         private bool _isRegistered = true;
 
+        // 用于接收热键消息的隐藏窗口
+        private readonly HotkeyWindow _hotkeyWindow;
+
         public bool IsRegistered => _isRegistered;
 
         public event Action<string>? Log;
@@ -35,9 +38,7 @@ namespace TradingEngine.Managers
         public HotkeyManager(Form form)
         {
             _form = form;
-
-            // 拦截 Windows 消息
-            Application.AddMessageFilter(new HotkeyMessageFilter(this));
+            _hotkeyWindow = new HotkeyWindow(this);
         }
 
         /// <summary>
@@ -55,7 +56,7 @@ namespace TradingEngine.Managers
             if ((keys & Keys.Alt) == Keys.Alt) modifiers |= MOD_ALT;
             if ((keys & Keys.Control) == Keys.Control) modifiers |= MOD_CONTROL;
 
-            if (RegisterHotKey(_form.Handle, id, modifiers, vk))
+            if (RegisterHotKey(_hotkeyWindow.Handle, id, modifiers, vk))
             {
                 _hotkeyActions[id] = action;
                 _hotkeyKeys[id] = keys;
@@ -78,7 +79,7 @@ namespace TradingEngine.Managers
 
             foreach (var id in _hotkeyActions.Keys)
             {
-                UnregisterHotKey(_form.Handle, id);
+                UnregisterHotKey(_hotkeyWindow.Handle, id);
             }
             _isRegistered = false;
             Log?.Invoke("All hotkeys unregistered");
@@ -103,7 +104,7 @@ namespace TradingEngine.Managers
                 if ((keys & Keys.Alt) == Keys.Alt) modifiers |= MOD_ALT;
                 if ((keys & Keys.Control) == Keys.Control) modifiers |= MOD_CONTROL;
 
-                RegisterHotKey(_form.Handle, id, modifiers, vk);
+                RegisterHotKey(_hotkeyWindow.Handle, id, modifiers, vk);
             }
             _isRegistered = true;
             Log?.Invoke("All hotkeys re-registered");
@@ -139,33 +140,34 @@ namespace TradingEngine.Managers
             // 注销所有热键
             foreach (var id in _hotkeyActions.Keys)
             {
-                UnregisterHotKey(_form.Handle, id);
+                UnregisterHotKey(_hotkeyWindow.Handle, id);
             }
             _hotkeyActions.Clear();
             _hotkeyKeys.Clear();
+            _hotkeyWindow.DestroyHandle();
         }
 
         /// <summary>
-        /// 消息过滤器，拦截 WM_HOTKEY 消息
+        /// 专门用于接收热键消息的隐藏窗口
         /// </summary>
-        private class HotkeyMessageFilter : IMessageFilter
+        private class HotkeyWindow : NativeWindow
         {
             private readonly HotkeyManager _manager;
 
-            public HotkeyMessageFilter(HotkeyManager manager)
+            public HotkeyWindow(HotkeyManager manager)
             {
                 _manager = manager;
+                CreateHandle(new CreateParams());
             }
 
-            public bool PreFilterMessage(ref Message m)
+            protected override void WndProc(ref Message m)
             {
                 if (m.Msg == WM_HOTKEY)
                 {
                     int id = m.WParam.ToInt32();
                     _manager.HandleHotkey(id);
-                    return true;
                 }
-                return false;
+                base.WndProc(ref m);
             }
         }
     }

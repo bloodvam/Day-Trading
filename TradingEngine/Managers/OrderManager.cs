@@ -1,5 +1,6 @@
 ﻿using TradingEngine.Config;
 using TradingEngine.Models;
+using TradingEngine.Parsers;
 
 namespace TradingEngine.Managers
 {
@@ -13,6 +14,34 @@ namespace TradingEngine.Managers
         public double StopTriggerPrice { get; set; }
         public double StopLimitPrice { get; set; }
         public bool IsSellAll { get; set; }
+    }
+
+    /// <summary>
+    /// 追踪最后一次买入的成交信息
+    /// </summary>
+    public class LastBuyInfo
+    {
+        public int Token { get; set; }
+        public int OrderId { get; set; }
+        public double TotalCost { get; set; }
+        public int TotalQty { get; set; }
+        public double AvgPrice { get; set; }
+
+        public void Reset(int token)
+        {
+            Token = token;
+            OrderId = 0;
+            TotalCost = 0;
+            TotalQty = 0;
+            // 不清空 AvgPrice，保留上一次的值
+        }
+
+        public void AddTrade(double price, int qty)
+        {
+            TotalCost += price * qty;
+            TotalQty += qty;
+            AvgPrice = TotalCost / TotalQty;
+        }
     }
 
     /// <summary>
@@ -37,6 +66,9 @@ namespace TradingEngine.Managers
         // 追踪 MoveStopToBreakeven: 标记哪个 symbol 需要在止损单取消后挂新止损
         private string? _pendingMoveStopSymbol;
 
+        // 追踪最后一次买入的成交价
+        private readonly LastBuyInfo _lastBuy = new();
+
         public event Action<string>? Log;
         public event Action<int>? NewOrderSent;  // 发送 NEWORDER 时触发，参数是 token
 
@@ -59,6 +91,9 @@ namespace TradingEngine.Managers
 
             // 监听持仓变化（卖出后重挂止损）
             _accountManager.PositionChanged += OnPositionChanged;
+
+            // 监听成交，追踪买入成交价
+            _client.TradeUpdate += OnTradeUpdate;
         }
 
         private int GetNextToken()
@@ -74,6 +109,16 @@ namespace TradingEngine.Managers
         private async void OnOrderExecuted(Order order)
         {
             if (order.Side != OrderSide.Buy) return;
+
+            // 记录最后一次买入的 OrderId
+            lock (_lock)
+            {
+                if (order.Token == _lastBuy.Token && _lastBuy.OrderId == 0)
+                {
+                    _lastBuy.OrderId = order.OrderId;
+                    Log?.Invoke($"LastBuy: Token {order.Token} -> OrderId {order.OrderId}");
+                }
+            }
 
             (double stopPrice, Bar entryBar) pendingStop;
             lock (_lock)
@@ -122,8 +167,10 @@ namespace TradingEngine.Managers
                 var position = _accountManager.GetPosition(order.Symbol);
                 if (position != null && position.Quantity > 0)
                 {
-                    Log?.Invoke($"Stop order {order.OrderId} canceled, placing new stop at breakeven {position.AvgCost:F2}");
-                    await PlaceStopOrder(order.Symbol, position.Quantity, position.AvgCost);
+                    // 优先使用最后一次买入的成交均价，如果没有则用持仓均价
+                    double breakevenPrice = _lastBuy.AvgPrice > 0 ? _lastBuy.AvgPrice : position.AvgCost;
+                    Log?.Invoke($"Stop order {order.OrderId} canceled, placing new stop at breakeven {breakevenPrice:F2}");
+                    await PlaceStopOrder(order.Symbol, position.Quantity, breakevenPrice);
                 }
                 return;
             }
@@ -186,6 +233,32 @@ namespace TradingEngine.Managers
             else
             {
                 Log?.Invoke($"Position cleared for {pos.Symbol}, no stop order needed");
+            }
+        }
+
+        /// <summary>
+        /// 成交时追踪买入成交价
+        /// </summary>
+        private void OnTradeUpdate(string line)
+        {
+            try
+            {
+                var trade = MessageParser.ParseTrade(line);
+                if (trade == null) return;
+                if (trade.Side != OrderSide.Buy) return;
+
+                lock (_lock)
+                {
+                    if (trade.OrderId == _lastBuy.OrderId && _lastBuy.OrderId != 0)
+                    {
+                        _lastBuy.AddTrade(trade.Price, trade.Quantity);
+                        Log?.Invoke($"LastBuy Trade: OrderId={trade.OrderId}, Price={trade.Price:F2}, Qty={trade.Quantity}, AvgPrice={_lastBuy.AvgPrice:F2}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log?.Invoke($"OnTradeUpdate error: {ex.Message}");
             }
         }
 
@@ -305,10 +378,11 @@ namespace TradingEngine.Managers
 
             int token = GetNextToken();
 
-            // 记录待挂止损信息
+            // 记录待挂止损信息和最后一次买入
             lock (_lock)
             {
                 _pendingStops[token] = (stopPrice, currentBar.Clone());
+                _lastBuy.Reset(token);
             }
 
             string barInfo = usedLastBar ? "LastBar" : "CurrentBar";
@@ -534,10 +608,11 @@ namespace TradingEngine.Managers
                 return false;
             }
 
-            double avgCost = position.AvgCost;
+            // 优先使用最后一次买入的成交均价，如果没有则用持仓均价
+            double breakevenPrice = _lastBuy.AvgPrice > 0 ? _lastBuy.AvgPrice : position.AvgCost;
             int shares = position.Quantity;
 
-            Log?.Invoke($"Moving stop to breakeven: {symbol} {shares}@{avgCost:F2}");
+            Log?.Invoke($"Moving stop to breakeven: {symbol} {shares}@{breakevenPrice:F2} (LastBuyAvg={_lastBuy.AvgPrice:F2}, PositionAvg={position.AvgCost:F2})");
 
             // 查找旧止损单
             var stopOrder = _accountManager.GetStopOrder(symbol);
@@ -555,7 +630,7 @@ namespace TradingEngine.Managers
             else
             {
                 // 没有旧止损单，直接挂新的
-                await PlaceStopOrder(symbol, shares, avgCost);
+                await PlaceStopOrder(symbol, shares, breakevenPrice);
             }
 
             return true;
@@ -647,10 +722,11 @@ namespace TradingEngine.Managers
 
             int token = GetNextToken();
 
-            // 记录待挂止损信息
+            // 记录待挂止损信息和最后一次买入
             lock (_lock)
             {
                 _pendingStops[token] = (stopPrice, currentBar.Clone());
+                _lastBuy.Reset(token);
             }
 
             string mode = profitRatio == 0 ? "BREAKEVEN" : $"KEEP {profitRatio * 100:F0}% PROFIT";
