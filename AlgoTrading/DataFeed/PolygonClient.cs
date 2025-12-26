@@ -11,7 +11,7 @@ namespace AlgoTrading.DataFeed
     {
         private readonly HttpClient _httpClient;
         private readonly string _apiKey;
-        private const string BaseUrl = "https://api.polygon.io";
+        private const string BaseUrl = "https://api.massive.com";
         private static readonly TimeZoneInfo EasternZone = TimeZoneInfo.FindSystemTimeZoneById("Eastern Standard Time");
 
         public event Action<string>? Log;
@@ -49,7 +49,7 @@ namespace AlgoTrading.DataFeed
 
             var url = $"{BaseUrl}/v3/trades/{symbol.ToUpper()}?" +
                       $"timestamp.gte={startNs}&timestamp.lt={endNs}" +
-                      $"&order=asc&limit=50000&apiKey={_apiKey}";
+                      $"&sort=timestamp&order=asc&limit=50000&apiKey={_apiKey}";
 
             int pageCount = 0;
 
@@ -94,6 +94,24 @@ namespace AlgoTrading.DataFeed
             }
 
             Log?.Invoke($"[{symbol}] Download complete: {allTrades.Count} trades total");
+
+            // 过滤掉延迟报告的暗池数据
+            // 条件：时间差 > 1秒 AND trf_id != 0
+            const long oneSecondNs = 1_000_000_000; // 1秒 = 10亿纳秒
+            int beforeFilter = allTrades.Count;
+            allTrades = allTrades.Where(t =>
+                !((t.SipTimestamp - t.ParticipantTimestamp) > oneSecondNs && t.TrfId != 0)
+            ).ToList();
+            int filtered = beforeFilter - allTrades.Count;
+            if (filtered > 0)
+            {
+                Log?.Invoke($"[{symbol}] Filtered {filtered} delayed dark pool trades");
+            }
+
+            // 按 SIP 时间戳排序（确保时间顺序）
+            allTrades.Sort((a, b) => a.SipTimestamp.CompareTo(b.SipTimestamp));
+            Log?.Invoke($"[{symbol}] Sorted by SIP timestamp");
+
             return allTrades;
         }
 

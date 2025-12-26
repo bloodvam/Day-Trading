@@ -9,11 +9,14 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-	  <PackageReference Include="Parquet.Net" Version="5.4.0" />
+		<PackageReference Include="Parquet.Net" Version="5.4.0" />
 	</ItemGroup>
 
 	<ItemGroup>
 		<None Update="config.json">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Update="backtest_config.json">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
 	</ItemGroup>

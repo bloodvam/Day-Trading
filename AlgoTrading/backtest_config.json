@@ -1,0 +1,23 @@
+﻿{
+    "Mode": "Specific",
+    "ResultOutputPath": "D:\\day trading\\backtest_breakout_strategy",
+
+    "DateRangeMode": {
+        "Enabled": false,
+        "StartDate": "2025-11-01",
+        "EndDate": "2025-11-30",
+        "Symbols": [ "RADX", "AMC", "GME" ],
+        "StartTime": "04:00",
+        "EndTime": "09:30"
+    },
+
+    "SpecificMode": [
+        {
+            "Enabled": true,
+            "Symbol": "RADX",
+            "Date": "2025-12-15",
+            "StartTime": "04:00",
+            "EndTime": "09:30"
+        }
+    ]
+}

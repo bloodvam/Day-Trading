@@ -1,4 +1,6 @@
-﻿using AlgoTrading.DataFeed;
+﻿using AlgoTrading.Backtest;
+using AlgoTrading.Core.Strategies;
+using AlgoTrading.DataFeed;
 
 namespace AlgoTrading
 {
@@ -6,6 +8,7 @@ namespace AlgoTrading
     {
         private TextBox _logTextBox = null!;
         private Button _downloadButton = null!;
+        private Button _backtestButton = null!;
         private TextBox _symbolTextBox = null!;
         private DateTimePicker _datePicker = null!;
         private CancellationTokenSource? _cts;
@@ -49,7 +52,7 @@ namespace AlgoTrading
                 Location = new Point(200, 12),
                 Width = 120,
                 Format = DateTimePickerFormat.Short,
-                Value = new DateTime(2024, 12, 15)
+                Value = new DateTime(2025, 12, 15)
             };
             Controls.Add(_datePicker);
 
@@ -63,11 +66,21 @@ namespace AlgoTrading
             _downloadButton.Click += DownloadButton_Click;
             Controls.Add(_downloadButton);
 
+            // Backtest 按钮
+            _backtestButton = new Button
+            {
+                Text = "Backtest",
+                Location = new Point(450, 10),
+                Width = 100
+            };
+            _backtestButton.Click += BacktestButton_Click;
+            Controls.Add(_backtestButton);
+
             // Cancel 按钮
             var cancelButton = new Button
             {
                 Text = "Cancel",
-                Location = new Point(450, 10),
+                Location = new Point(560, 10),
                 Width = 80
             };
             cancelButton.Click += (s, e) => _cts?.Cancel();
@@ -88,8 +101,8 @@ namespace AlgoTrading
             Controls.Add(_logTextBox);
 
             // 窗口设置
-            Text = "AlgoTrading - Data Downloader";
-            ClientSize = new Size(700, 450);
+            Text = "AlgoTrading - Data Downloader & Backtest";
+            ClientSize = new Size(800, 500);
         }
 
         private async void DownloadButton_Click(object? sender, EventArgs e)
@@ -104,6 +117,7 @@ namespace AlgoTrading
             }
 
             _downloadButton.Enabled = false;
+            _backtestButton.Enabled = false;
             _logTextBox.Clear();
             _cts = new CancellationTokenSource();
 
@@ -142,6 +156,68 @@ namespace AlgoTrading
             finally
             {
                 _downloadButton.Enabled = true;
+                _backtestButton.Enabled = true;
+                _cts?.Dispose();
+                _cts = null;
+            }
+        }
+
+        private async void BacktestButton_Click(object? sender, EventArgs e)
+        {
+            _downloadButton.Enabled = false;
+            _backtestButton.Enabled = false;
+            _logTextBox.Clear();
+            _cts = new CancellationTokenSource();
+
+            try
+            {
+                Log("=== Loading Backtest Config ===");
+                var config = BacktestConfig.LoadDefault();
+                Log($"Mode: {config.Mode}");
+                Log($"Output Path: {config.ResultOutputPath}");
+                Log("");
+
+                var engine = new BacktestEngine(config);
+                engine.Log += Log;
+
+                var strategy = new BreakoutStrategy
+                {
+                    RiskAmount = 100,
+                    BreakoutConfirmOffset = 0.05,
+                    MinDistanceFromHigh = 0.50
+                };
+
+                Log($"Strategy: {strategy.Name}");
+                Log($"  R (Risk Amount): ${strategy.RiskAmount}");
+                Log($"  Breakout Confirm Offset: ${strategy.BreakoutConfirmOffset}");
+                Log($"  Min Distance From High: ${strategy.MinDistanceFromHigh}");
+                Log("");
+
+                var success = await Task.Run(() => engine.RunAsync(strategy, _cts.Token));
+
+                if (success)
+                {
+                    Log("\n✓ Backtest completed successfully!");
+                }
+                else
+                {
+                    Log("\n✗ Backtest failed or was incomplete.");
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                Log("\n⚠ Backtest cancelled by user");
+            }
+            catch (Exception ex)
+            {
+                Log($"\n✗ Error: {ex.Message}");
+                Log($"Stack: {ex.StackTrace}");
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                _downloadButton.Enabled = true;
+                _backtestButton.Enabled = true;
                 _cts?.Dispose();
                 _cts = null;
             }
@@ -168,7 +244,11 @@ namespace AlgoTrading
                 Log($"API Key: {(config.PolygonApiKey.Length > 8 ? config.PolygonApiKey[..8] + "..." : "NOT SET")}");
                 Log($"Data Path: {config.DataBasePath}");
                 Log("");
-                Log("Ready to download. Enter symbol and date, then click Download.");
+                Log("=== Instructions ===");
+                Log("1. Download: Enter symbol and date, click Download");
+                Log("2. Backtest: Edit backtest_config.json, click Backtest");
+                Log("");
+                Log("Ready.");
             }
             catch (Exception ex)
             {
