@@ -11,6 +11,11 @@ namespace AlgoTrading
         private Button _backtestButton = null!;
         private TextBox _symbolTextBox = null!;
         private DateTimePicker _datePicker = null!;
+        private CheckBox _barTimeoutExitCheckBox = null!;
+        private CheckBox _moveStopToCostCheckBox = null!;
+        private CheckBox _multiplePositionsCheckBox = null!;
+        private TextBox _volumeThresholdTextBox = null!;
+        private TextBox _atrPeriodTextBox = null!;
         private CancellationTokenSource? _cts;
 
         public Form1()
@@ -86,12 +91,78 @@ namespace AlgoTrading
             cancelButton.Click += (s, e) => _cts?.Cancel();
             Controls.Add(cancelButton);
 
+            // Bar Timeout Exit CheckBox
+            _barTimeoutExitCheckBox = new CheckBox
+            {
+                Text = "Bar Timeout Exit",
+                Location = new Point(650, 13),
+                AutoSize = true,
+                Checked = false
+            };
+            Controls.Add(_barTimeoutExitCheckBox);
+
+            // Move Stop to Cost CheckBox（超时后盈利则止损移到成本价）
+            _moveStopToCostCheckBox = new CheckBox
+            {
+                Text = "Move Stop to Cost",
+                Location = new Point(780, 13),
+                AutoSize = true,
+                Checked = false
+            };
+            Controls.Add(_moveStopToCostCheckBox);
+
+            // Volume Threshold Label
+            var volumeLabel = new Label
+            {
+                Text = "Min Volume:",
+                Location = new Point(12, 42),
+                AutoSize = true
+            };
+            Controls.Add(volumeLabel);
+
+            // Volume Threshold TextBox
+            _volumeThresholdTextBox = new TextBox
+            {
+                Location = new Point(85, 39),
+                Width = 80,
+                Text = "0"
+            };
+            Controls.Add(_volumeThresholdTextBox);
+
+            // ATR Period Label
+            var atrLabel = new Label
+            {
+                Text = "ATR Period:",
+                Location = new Point(180, 42),
+                AutoSize = true
+            };
+            Controls.Add(atrLabel);
+
+            // ATR Period TextBox
+            _atrPeriodTextBox = new TextBox
+            {
+                Location = new Point(255, 39),
+                Width = 50,
+                Text = "14"
+            };
+            Controls.Add(_atrPeriodTextBox);
+
+            // Multiple Positions CheckBox
+            _multiplePositionsCheckBox = new CheckBox
+            {
+                Text = "Multi Positions",
+                Location = new Point(320, 41),
+                AutoSize = true,
+                Checked = false
+            };
+            Controls.Add(_multiplePositionsCheckBox);
+
             // Log 文本框
             _logTextBox = new TextBox
             {
-                Location = new Point(12, 45),
+                Location = new Point(12, 70),
                 Width = ClientSize.Width - 24,
-                Height = ClientSize.Height - 57,
+                Height = ClientSize.Height - 82,
                 Multiline = true,
                 ScrollBars = ScrollBars.Both,
                 ReadOnly = true,
@@ -180,17 +251,44 @@ namespace AlgoTrading
                 var engine = new BacktestEngine(config);
                 engine.Log += Log;
 
+                // 解析成交量阈值
+                long volumeThreshold = 0;
+                if (!string.IsNullOrWhiteSpace(_volumeThresholdTextBox.Text))
+                {
+                    long.TryParse(_volumeThresholdTextBox.Text.Trim(), out volumeThreshold);
+                }
+
+                // 解析 ATR 周期
+                int atrPeriod = 14;
+                if (!string.IsNullOrWhiteSpace(_atrPeriodTextBox.Text))
+                {
+                    if (int.TryParse(_atrPeriodTextBox.Text.Trim(), out int parsed) && parsed > 0)
+                    {
+                        atrPeriod = parsed;
+                    }
+                }
+
                 var strategy = new BreakoutStrategy
                 {
                     RiskAmount = 100,
                     BreakoutConfirmOffset = 0.05,
-                    MinDistanceFromHigh = 0.50
+                    MinDistanceFromHigh = 0.50,
+                    EnableBarTimeoutExit = _barTimeoutExitCheckBox.Checked,
+                    EnableMoveStopToCost = _moveStopToCostCheckBox.Checked,
+                    MinVolumeThreshold = volumeThreshold,
+                    AtrPeriod = atrPeriod,
+                    EnableMultiplePositions = _multiplePositionsCheckBox.Checked
                 };
 
                 Log($"Strategy: {strategy.Name}");
                 Log($"  R (Risk Amount): ${strategy.RiskAmount}");
                 Log($"  Breakout Confirm Offset: ${strategy.BreakoutConfirmOffset}");
                 Log($"  Min Distance From High: ${strategy.MinDistanceFromHigh}");
+                Log($"  Bar Timeout Exit: {strategy.EnableBarTimeoutExit}");
+                Log($"  Move Stop to Cost: {strategy.EnableMoveStopToCost}");
+                Log($"  Min Volume Threshold: {strategy.MinVolumeThreshold:N0}");
+                Log($"  ATR Period: {strategy.AtrPeriod}");
+                Log($"  Multiple Positions: {strategy.EnableMultiplePositions}");
                 Log("");
 
                 var success = await Task.Run(() => engine.RunAsync(strategy, _cts.Token));

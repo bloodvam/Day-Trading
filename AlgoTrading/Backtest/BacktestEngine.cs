@@ -147,7 +147,7 @@ namespace AlgoTrading.Backtest
             var position = strategy.GetPosition();
 
             // 确定执行股数
-            int shares = signal.Shares ?? 100; // 默认 100 股，之后可以改
+            int shares;
 
             if (signal.Type == SignalType.SellHalf)
             {
@@ -155,14 +155,21 @@ namespace AlgoTrading.Backtest
             }
             else if (signal.Type == SignalType.SellAll)
             {
-                shares = position.Shares;
+                // 如果 signal 指定了股数，用指定的；否则卖出全部
+                shares = signal.Shares ?? position.Shares;
+            }
+            else
+            {
+                shares = signal.Shares ?? 100;
             }
 
             // 计算 PnL（卖出时）
             double? pnl = null;
             if (signal.Type == SignalType.SellHalf || signal.Type == SignalType.SellAll)
             {
-                pnl = shares * (signal.Price - position.AvgCost);
+                // 优先使用 signal.EntryPrice（多仓位模式），否则用 position.AvgCost（单仓位模式）
+                double entryPrice = signal.EntryPrice ?? position.AvgCost;
+                pnl = shares * (signal.Price - entryPrice);
             }
 
             // 记录交易

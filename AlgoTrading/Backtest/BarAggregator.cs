@@ -10,6 +10,26 @@ namespace AlgoTrading.Backtest
         private readonly int _intervalSeconds;
         private Bar? _currentBar;
 
+        // ATR 相关
+        private int _atrPeriod = 14;
+        private readonly List<double> _trueRanges = new();
+        private double _prevClose = 0;
+        private double _currentATR = 0;
+
+        /// <summary>
+        /// ATR 周期（可配置）
+        /// </summary>
+        public int AtrPeriod
+        {
+            get => _atrPeriod;
+            set => _atrPeriod = value > 0 ? value : 14;
+        }
+
+        /// <summary>
+        /// 当前 ATR 值
+        /// </summary>
+        public double CurrentATR => _currentATR;
+
         /// <summary>
         /// 当前正在形成的 Bar
         /// </summary>
@@ -47,6 +67,10 @@ namespace AlgoTrading.Backtest
             {
                 // 当前 Bar 完成
                 _currentBar.IsComplete = true;
+
+                // 计算 ATR
+                CalculateATR(_currentBar);
+
                 BarCompleted?.Invoke(_currentBar.Clone());
 
                 // 创建新 Bar
@@ -57,6 +81,48 @@ namespace AlgoTrading.Backtest
             {
                 // 更新当前 Bar
                 UpdateBar(_currentBar, trade);
+            }
+        }
+
+        /// <summary>
+        /// 计算 ATR（Bar 完成时调用）
+        /// </summary>
+        private void CalculateATR(Bar bar)
+        {
+            // 计算 True Range
+            double tr;
+            if (_prevClose == 0)
+            {
+                // 第一个 Bar：TR = High - Low
+                tr = bar.High - bar.Low;
+            }
+            else
+            {
+                // TR = max(High-Low, |High-PrevClose|, |Low-PrevClose|)
+                tr = Math.Max(bar.High - bar.Low,
+                     Math.Max(Math.Abs(bar.High - _prevClose),
+                              Math.Abs(bar.Low - _prevClose)));
+            }
+
+            _trueRanges.Add(tr);
+            _prevClose = bar.Close;
+
+            int count = _trueRanges.Count;
+
+            if (count < _atrPeriod)
+            {
+                // Bar 数量 < 周期：用已有的 TR 求平均
+                _currentATR = _trueRanges.Average();
+            }
+            else if (count == _atrPeriod)
+            {
+                // 刚好等于周期：SMA，作为 Wilder's 初始值
+                _currentATR = _trueRanges.Average();
+            }
+            else
+            {
+                // Bar 数量 > 周期：Wilder's Smoothing
+                _currentATR = (_currentATR * (_atrPeriod - 1) + tr) / _atrPeriod;
             }
         }
 
@@ -105,6 +171,9 @@ namespace AlgoTrading.Backtest
         public void Reset()
         {
             _currentBar = null;
+            _trueRanges.Clear();
+            _prevClose = 0;
+            _currentATR = 0;
         }
 
         /// <summary>
@@ -115,6 +184,7 @@ namespace AlgoTrading.Backtest
             if (_currentBar != null)
             {
                 _currentBar.IsComplete = true;
+                CalculateATR(_currentBar);
                 BarCompleted?.Invoke(_currentBar.Clone());
                 _currentBar = null;
             }

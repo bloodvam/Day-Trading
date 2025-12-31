@@ -41,6 +41,11 @@
         /// </summary>
         public int? Shares { get; set; }
 
+        /// <summary>
+        /// 入场价格（用于计算 PnL，多仓位模式下每个 unit 有不同的入场价）
+        /// </summary>
+        public double? EntryPrice { get; set; }
+
         public override string ToString()
         {
             return $"[{Time:HH:mm:ss.fff}] {Type} @ {Price:F2} - {Reason}";

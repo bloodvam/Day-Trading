@@ -160,49 +160,113 @@ namespace TradingEngine.Core
 
         public async Task BuyOneR()
         {
-            NewOperationStarted?.Invoke();
-            await _orderManager.BuyOneR();
+            try
+            {
+                Log?.Invoke("Hotkey: Buy 1R triggered");
+                NewOperationStarted?.Invoke();
+                await _orderManager.BuyOneR();
+            }
+            catch (Exception ex)
+            {
+                Log?.Invoke($"BuyOneR error: {ex.Message}");
+            }
         }
 
         public async Task SellAll()
         {
-            NewOperationStarted?.Invoke();
-            await _orderManager.SellAll();
+            try
+            {
+                Log?.Invoke("Hotkey: Sell All triggered");
+                NewOperationStarted?.Invoke();
+                await _orderManager.SellAll();
+            }
+            catch (Exception ex)
+            {
+                Log?.Invoke($"SellAll error: {ex.Message}");
+            }
         }
 
         public async Task SellHalf()
         {
-            NewOperationStarted?.Invoke();
-            await _orderManager.SellHalf();
+            try
+            {
+                Log?.Invoke("Hotkey: Sell Half triggered");
+                NewOperationStarted?.Invoke();
+                await _orderManager.SellHalf();
+            }
+            catch (Exception ex)
+            {
+                Log?.Invoke($"SellHalf error: {ex.Message}");
+            }
         }
 
         public async Task Sell70Percent()
         {
-            NewOperationStarted?.Invoke();
-            await _orderManager.Sell70Percent();
+            try
+            {
+                Log?.Invoke("Hotkey: Sell 70% triggered");
+                NewOperationStarted?.Invoke();
+                await _orderManager.Sell70Percent();
+            }
+            catch (Exception ex)
+            {
+                Log?.Invoke($"Sell70Percent error: {ex.Message}");
+            }
         }
 
         public async Task AddPositionBreakeven()
         {
-            NewOperationStarted?.Invoke();
-            await _orderManager.AddPositionBreakeven();
+            try
+            {
+                Log?.Invoke("Hotkey: Add Position (Breakeven) triggered");
+                NewOperationStarted?.Invoke();
+                await _orderManager.AddPositionBreakeven();
+            }
+            catch (Exception ex)
+            {
+                Log?.Invoke($"AddPositionBreakeven error: {ex.Message}");
+            }
         }
 
         public async Task AddPositionHalfProfit()
         {
-            NewOperationStarted?.Invoke();
-            await _orderManager.AddPositionHalfProfit();
+            try
+            {
+                Log?.Invoke("Hotkey: Add Position (Half Profit) triggered");
+                NewOperationStarted?.Invoke();
+                await _orderManager.AddPositionHalfProfit();
+            }
+            catch (Exception ex)
+            {
+                Log?.Invoke($"AddPositionHalfProfit error: {ex.Message}");
+            }
         }
 
         public async Task MoveStopToBreakeven()
         {
-            NewOperationStarted?.Invoke();
-            await _orderManager.MoveStopToBreakeven();
+            try
+            {
+                Log?.Invoke("Hotkey: Move Stop to Breakeven triggered");
+                NewOperationStarted?.Invoke();
+                await _orderManager.MoveStopToBreakeven();
+            }
+            catch (Exception ex)
+            {
+                Log?.Invoke($"MoveStopToBreakeven error: {ex.Message}");
+            }
         }
 
         public async Task CancelAllOrders()
         {
-            await _orderManager.CancelAllOrders();
+            try
+            {
+                Log?.Invoke("Cancel all orders");
+                await _orderManager.CancelAllOrders();
+            }
+            catch (Exception ex)
+            {
+                Log?.Invoke($"CancelAllOrders error: {ex.Message}");
+            }
         }
 
         #endregion
@@ -216,15 +280,16 @@ namespace TradingEngine.Core
         {
             _hotkeyManager = new HotkeyManager(form);
 
+            // 用 Task.Run 让下单在线程池执行，不阻塞 UI 线程
             var hotkeys = new List<(Keys key, string name, Action action)>
             {
-                (Keys.D1 | Keys.Shift, "Shift+1", async () => await BuyOneR()),
-                (Keys.D1 | Keys.Alt, "Alt+1", async () => await SellAll()),
-                (Keys.D2 | Keys.Alt, "Alt+2", async () => await SellHalf()),
-                (Keys.D3 | Keys.Alt, "Alt+3", async () => await Sell70Percent()),
-                (Keys.Q | Keys.Shift, "Shift+Q", async () => await AddPositionBreakeven()),
-                (Keys.W | Keys.Shift, "Shift+W", async () => await AddPositionHalfProfit()),
-                (Keys.Space, "Space", async () => await MoveStopToBreakeven())
+                (Keys.D1 | Keys.Shift, "Shift+1", () => _ = Task.Run(BuyOneR)),
+                (Keys.D1 | Keys.Alt, "Alt+1", () => _ = Task.Run(SellAll)),
+                (Keys.D2 | Keys.Alt, "Alt+2", () => _ = Task.Run(SellHalf)),
+                (Keys.D3 | Keys.Alt, "Alt+3", () => _ = Task.Run(Sell70Percent)),
+                (Keys.Q | Keys.Shift, "Shift+Q", () => _ = Task.Run(AddPositionBreakeven)),
+                (Keys.W | Keys.Shift, "Shift+W", () => _ = Task.Run(AddPositionHalfProfit)),
+                (Keys.Space, "Space", () => _ = Task.Run(MoveStopToBreakeven))
             };
 
             foreach (var (key, name, action) in hotkeys)

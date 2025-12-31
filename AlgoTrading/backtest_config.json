@@ -13,11 +13,37 @@
 
     "SpecificMode": [
         {
-            "Enabled": true,
+            "Enabled": false,
+            "Rank": "A",
             "Symbol": "RADX",
             "Date": "2025-12-15",
             "StartTime": "04:00",
-            "EndTime": "09:30"
+            "EndTime": "07:17"
+        },
+        {
+            "Enabled": false,
+            "Rank": "A",
+            "Symbol": "BTTC",
+            "Date": "2025-12-11",
+            "StartTime": "04:00",
+            "EndTime": "08:57"
+        },
+        {
+            "Enabled": false,
+            "Rank": "C",
+            "Symbol": "BBGI",
+            "Date": "2025-12-10",
+            "StartTime": "08:59",
+            "EndTime": "09:22"
+        },
+
+        {
+            "Enabled": true,
+            "Rank": "A",
+            "Symbol": "OLMA",
+            "Date": "2025-11-18",
+            "StartTime": "07:00",
+            "EndTime": "08:20"
         }
     ]
 }

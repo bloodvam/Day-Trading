@@ -57,6 +57,26 @@ namespace AlgoTrading.Backtest
         public double TotalPnL => _records.Where(r => r.PnL.HasValue).Sum(r => r.PnL!.Value);
 
         /// <summary>
+        /// 总盈利（只计算盈利的交易）
+        /// </summary>
+        public double TotalProfit => _records.Where(r => r.PnL.HasValue && r.PnL.Value > 0).Sum(r => r.PnL!.Value);
+
+        /// <summary>
+        /// 总亏损（只计算亏损的交易）
+        /// </summary>
+        public double TotalLoss => _records.Where(r => r.PnL.HasValue && r.PnL.Value < 0).Sum(r => r.PnL!.Value);
+
+        /// <summary>
+        /// 盈利次数
+        /// </summary>
+        public int WinCount => _records.Count(r => r.PnL.HasValue && r.PnL.Value > 0);
+
+        /// <summary>
+        /// 亏损次数
+        /// </summary>
+        public int LossCount => _records.Count(r => r.PnL.HasValue && r.PnL.Value < 0);
+
+        /// <summary>
         /// 交易次数
         /// </summary>
         public int TradeCount => _records.Count;
@@ -111,11 +131,17 @@ namespace AlgoTrading.Backtest
         {
             var output = log ?? Console.WriteLine;
 
+            var winRate = SellCount > 0 ? (double)WinCount / SellCount * 100 : 0;
+
             output("\n========== Backtest Summary ==========");
             output($"Total Trades: {TradeCount}");
             output($"  - Buy/AddPosition: {BuyCount}");
             output($"  - Sell: {SellCount}");
-            output($"Total PnL: ${TotalPnL:F2}");
+            output($"  - Win: {WinCount} ({winRate:F1}%)");
+            output($"  - Loss: {LossCount}");
+            output($"Total Profit: ${TotalProfit:F2}");
+            output($"Total Loss: ${TotalLoss:F2}");
+            output($"Net PnL: ${TotalPnL:F2}");
             output("=======================================\n");
         }
 
