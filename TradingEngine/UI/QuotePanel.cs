@@ -41,7 +41,13 @@ namespace TradingEngine.UI
         {
             Controller.QuoteUpdated += (quote) => InvokeUI(() => UpdateQuote(quote));
             Controller.BarUpdated += (bar) => InvokeUI(() => UpdateBar(bar));
-            Controller.SymbolUnsubscribed += (s) => InvokeUI(() => Clear());
+            Controller.ActiveSymbolChanged += (s) => InvokeUI(() =>
+            {
+                if (string.IsNullOrEmpty(s))
+                {
+                    Clear();
+                }
+            });
         }
 
         private void UpdateQuote(Quote quote)

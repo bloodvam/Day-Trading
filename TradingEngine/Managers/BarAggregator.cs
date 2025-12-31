@@ -17,7 +17,7 @@ namespace TradingEngine.Managers
     /// <summary>
     /// K线聚合器 - 支持多时间周期
     /// </summary>
-    public class BarAggregator
+    public class BarAggregator : IDisposable
     {
         // symbol -> (intervalSeconds -> BarSeries)
         private readonly Dictionary<string, Dictionary<int, BarSeries>> _seriesMap = new();
@@ -25,6 +25,7 @@ namespace TradingEngine.Managers
         // symbol -> (intervalSeconds -> currentBar)
         private readonly Dictionary<string, Dictionary<int, Bar>> _currentBars = new();
 
+        private readonly SymbolDataManager _dataManager;
         private readonly object _lock = new();
 
         /// <summary>
@@ -47,10 +48,19 @@ namespace TradingEngine.Managers
         /// </summary>
         public event Action<Bar>? BarUpdated;
 
-        public BarAggregator(int primaryInterval = 5)
+        public BarAggregator(SymbolDataManager dataManager, int primaryInterval = 5)
         {
+            _dataManager = dataManager;
             PrimaryInterval = primaryInterval;
             EnabledIntervals.Add(primaryInterval);
+
+            // 监听 symbol 移除事件，自动清理 Bar 数据
+            _dataManager.SymbolRemoved += Clear;
+        }
+
+        public void Dispose()
+        {
+            _dataManager.SymbolRemoved -= Clear;
         }
 
         /// <summary>
@@ -257,6 +267,14 @@ namespace TradingEngine.Managers
                 _seriesMap.Clear();
                 _currentBars.Clear();
             }
+        }
+
+        /// <summary>
+        /// 手动触发 BarUpdated 事件（用于切换 ActiveSymbol 时）
+        /// </summary>
+        public void NotifyBarUpdated(Bar bar)
+        {
+            BarUpdated?.Invoke(bar.Clone());
         }
 
         #region Private Methods

@@ -10,6 +10,7 @@ namespace TradingEngine
         // Panels
         private ConnectionPanel _connectionPanel = null!;
         private SubscriptionPanel _subscriptionPanel = null!;
+        private SymbolBar _symbolBar = null!;
         private QuotePanel _quotePanel = null!;
         private AccountPanel _accountPanel = null!;
         private PositionsPanel _positionsPanel = null!;
@@ -27,7 +28,7 @@ namespace TradingEngine
             this.SuspendLayout();
             this.AutoScaleDimensions = new SizeF(7F, 15F);
             this.AutoScaleMode = AutoScaleMode.Font;
-            this.ClientSize = new Size(900, 700);
+            this.ClientSize = new Size(900, 750);
             this.Name = "MainForm";
             this.Text = "Trading Engine";
             this.ResumeLayout(false);
@@ -58,6 +59,7 @@ namespace TradingEngine
         {
             _connectionPanel = new ConnectionPanel(_controller);
             _subscriptionPanel = new SubscriptionPanel(_controller);
+            _symbolBar = new SymbolBar(_controller);
             _quotePanel = new QuotePanel(_controller);
             _accountPanel = new AccountPanel(_controller);
             _positionsPanel = new PositionsPanel(_controller);
@@ -67,21 +69,23 @@ namespace TradingEngine
 
         private void LayoutPanels()
         {
-            // 顶部区域 - 使用 Dock
+            // 顶部区域 - Global 配置
             var topContainer = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = 220
+                Height = 260
             };
 
             _connectionPanel.Dock = DockStyle.Top;
             _subscriptionPanel.Dock = DockStyle.Top;
+            _symbolBar.Dock = DockStyle.Top;
             _quotePanel.Dock = DockStyle.Top;
             _accountPanel.Dock = DockStyle.Top;
 
             // 注意添加顺序（后添加的在上面）
             topContainer.Controls.Add(_accountPanel);
             topContainer.Controls.Add(_quotePanel);
+            topContainer.Controls.Add(_symbolBar);
             topContainer.Controls.Add(_subscriptionPanel);
             topContainer.Controls.Add(_connectionPanel);
 

@@ -30,11 +30,20 @@ namespace TradingEngine.UI
         private void BindEvents()
         {
             Controller.AccountInfoChanged += (info) => InvokeUI(() => UpdateAccount(info));
+            Controller.LoginSuccess += () => InvokeUI(() => UpdateAccount(Controller.AccountInfo));
         }
 
         private void UpdateAccount(AccountInfo info)
         {
-            _lblAccount.Text = $"Account: Equity:{info.CurrentEquity:N2}  BP:{info.BuyingPower:N2}  P&L:{info.NetPL:N2}";
+            if (info.CurrentEquity > 0)
+            {
+                double leverage = TradingEngine.Config.AppConfig.Instance.Trading.Leverage;
+                _lblAccount.Text = $"Account: Equity:{info.CurrentEquity:N2}  BP:{info.BuyingPower:N2}  (Leverage:{leverage}x)";
+            }
+            else
+            {
+                _lblAccount.Text = "Account: (waiting for data...)";
+            }
         }
     }
 }

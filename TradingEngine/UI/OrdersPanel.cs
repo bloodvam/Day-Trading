@@ -5,6 +5,7 @@ namespace TradingEngine.UI
     public class OrdersPanel : BasePanel
     {
         private ListBox _lstOrders;
+        private string? _activeSymbol;
 
         public OrdersPanel(TradingController controller) : base(controller)
         {
@@ -27,8 +28,11 @@ namespace TradingEngine.UI
             {
                 Location = new Point(5, 25),
                 Size = new Size(420, 100),
-                Font = new Font("Consolas", 9)
+                Font = new Font("Consolas", 9),
+                DrawMode = DrawMode.OwnerDrawFixed,
+                ItemHeight = 16
             };
+            _lstOrders.DrawItem += LstOrders_DrawItem;
 
             this.Controls.Add(lblTitle);
             this.Controls.Add(_lstOrders);
@@ -36,17 +40,50 @@ namespace TradingEngine.UI
 
         private void BindEvents()
         {
-            // 监听订单添加/移除
             Controller.OrderAdded += (order) => InvokeUI(() => RefreshOrders());
             Controller.OrderRemoved += (order) => InvokeUI(() => RefreshOrders());
             Controller.LoginSuccess += () => InvokeUI(() => RefreshOrders());
+
+            // 监听 ActiveSymbol 变化
+            Controller.ActiveSymbolChanged += (symbol) => InvokeUI(() =>
+            {
+                _activeSymbol = symbol;
+                _lstOrders.Invalidate();  // 重绘以更新高亮
+            });
+        }
+
+        private void LstOrders_DrawItem(object? sender, DrawItemEventArgs e)
+        {
+            if (e.Index < 0) return;
+
+            e.DrawBackground();
+
+            var item = _lstOrders.Items[e.Index] as OrderItem;
+            if (item == null) return;
+
+            // 判断是否是当前选中的 symbol
+            bool isActive = item.Symbol == _activeSymbol;
+
+            // 背景色
+            Color backColor = isActive ? Color.LightSkyBlue : e.BackColor;
+            using (var brush = new SolidBrush(backColor))
+            {
+                e.Graphics.FillRectangle(brush, e.Bounds);
+            }
+
+            // 文字
+            using (var brush = new SolidBrush(e.ForeColor))
+            {
+                e.Graphics.DrawString(item.DisplayText, e.Font!, brush, e.Bounds);
+            }
+
+            e.DrawFocusRectangle();
         }
 
         private void RefreshOrders()
         {
             _lstOrders.Items.Clear();
 
-            // GetAllOrders 已经只返回 Accepted 状态的订单
             foreach (var order in Controller.GetAllOrders().OrderByDescending(o => o.Time))
             {
                 string typeStr = order.Type switch
@@ -62,8 +99,21 @@ namespace TradingEngine.UI
                     ? $"Trigger@{order.StopPrice:F2} Limit@{order.Price:F2}"
                     : $"@{order.Price:F2}";
 
-                _lstOrders.Items.Add($"[{order.OrderId}] {order.Symbol} {order.Side} {order.LeftQuantity}/{order.Quantity} {typeStr} {priceStr}");
+                string displayText = $"[{order.OrderId}] {order.Symbol} {order.Side} {order.LeftQuantity}/{order.Quantity} {typeStr} {priceStr}";
+
+                _lstOrders.Items.Add(new OrderItem
+                {
+                    Symbol = order.Symbol,
+                    DisplayText = displayText
+                });
             }
+        }
+
+        private class OrderItem
+        {
+            public string Symbol { get; set; } = "";
+            public string DisplayText { get; set; } = "";
+            public override string ToString() => DisplayText;
         }
     }
 }

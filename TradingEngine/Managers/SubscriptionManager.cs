@@ -9,49 +9,44 @@ namespace TradingEngine.Managers
     public class SubscriptionManager
     {
         private readonly DasClient _client;
+        private readonly SymbolDataManager _dataManager;
         private readonly BarAggregator _barAggregator;
-        private readonly Dictionary<string, Quote> _quotes = new();
-        private readonly object _lock = new();
 
-        private string? _currentSymbol;
-
-        public string? CurrentSymbol => _currentSymbol;
-
-        public event Action<Quote>? QuoteUpdated;
+        // 事件
+        public event Action<Quote>? QuoteUpdated;           // 只有 ActiveSymbol 的 Quote 更新
+        public event Action<Quote>? AnyQuoteUpdated;        // 任何订阅股票的 Quote 更新
         public event Action<Tick>? TickReceived;
         public event Action<string>? SymbolSubscribed;
         public event Action<string>? SymbolUnsubscribed;
 
-        public SubscriptionManager(DasClient client, BarAggregator barAggregator)
+        public SubscriptionManager(DasClient client, SymbolDataManager dataManager, BarAggregator barAggregator)
         {
             _client = client;
+            _dataManager = dataManager;
             _barAggregator = barAggregator;
-            SubscribeEvents();
-        }
 
-        private void SubscribeEvents()
-        {
             _client.QuoteReceived += OnQuoteReceived;
             _client.TsReceived += OnTsReceived;
         }
 
         private void OnQuoteReceived(string line)
         {
-            lock (_lock)
+            var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 2) return;
+
+            string symbol = parts[1];
+            var state = _dataManager.Get(symbol);
+            if (state == null) return;
+
+            MessageParser.ParseQuote(line, state.Quote);
+
+            // 所有订阅股票的 Quote 更新都触发
+            AnyQuoteUpdated?.Invoke(state.Quote);
+
+            // 只有当前选中的股票才触发 QuoteUpdated
+            if (symbol == _dataManager.ActiveSymbol)
             {
-                // 解析到现有Quote对象或创建新的
-                var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                if (parts.Length < 2) return;
-
-                string symbol = parts[1];
-                if (!_quotes.TryGetValue(symbol, out var quote))
-                {
-                    quote = new Quote { Symbol = symbol };
-                    _quotes[symbol] = quote;
-                }
-
-                MessageParser.ParseQuote(line, quote);
-                QuoteUpdated?.Invoke(quote);
+                QuoteUpdated?.Invoke(state.Quote);
             }
         }
 
@@ -60,90 +55,79 @@ namespace TradingEngine.Managers
             var tick = MessageParser.ParseTick(line);
             if (tick == null) return;
 
-            // 传递给BarAggregator
+            if (!_dataManager.Contains(tick.Symbol)) return;
+
+            // 传递给 BarAggregator
             _barAggregator.ProcessTick(tick);
 
-            TickReceived?.Invoke(tick);
+            // 只有当前选中的股票才触发事件
+            if (tick.Symbol == _dataManager.ActiveSymbol)
+            {
+                TickReceived?.Invoke(tick);
+            }
         }
 
         /// <summary>
-        /// 订阅股票（单股票模式，会自动取消之前的订阅）
+        /// 订阅股票
         /// </summary>
         public async Task SubscribeAsync(string symbol)
         {
             symbol = symbol.ToUpper().Trim();
             if (string.IsNullOrEmpty(symbol)) return;
 
-            // 先取消之前的订阅
-            if (!string.IsNullOrEmpty(_currentSymbol) && _currentSymbol != symbol)
+            // 已经订阅过了，直接设为 active
+            if (_dataManager.Contains(symbol))
             {
-                await UnsubscribeCurrentAsync();
+                _dataManager.ActiveSymbol = symbol;
+                return;
             }
 
-            _currentSymbol = symbol;
+            // 创建 SymbolState
+            _dataManager.GetOrCreate(symbol);
 
-            // 初始化Quote
-            lock (_lock)
-            {
-                if (!_quotes.ContainsKey(symbol))
-                {
-                    _quotes[symbol] = new Quote { Symbol = symbol };
-                }
-            }
-
-            // 订阅Lv1和T&S
+            // 订阅 Lv1 和 T&S
             await _client.SubscribeLv1(symbol);
             await _client.SubscribeTimeSales(symbol);
 
             SymbolSubscribed?.Invoke(symbol);
+
+            // 最新订阅的自动选中
+            _dataManager.ActiveSymbol = symbol;
         }
 
         /// <summary>
-        /// 取消当前订阅
+        /// 取消订阅指定股票
         /// </summary>
-        public async Task UnsubscribeCurrentAsync()
+        public async Task UnsubscribeAsync(string symbol)
         {
-            if (string.IsNullOrEmpty(_currentSymbol)) return;
+            symbol = symbol.ToUpper().Trim();
+            if (string.IsNullOrEmpty(symbol)) return;
 
-            string symbol = _currentSymbol;
-            _currentSymbol = null;
+            if (!_dataManager.Contains(symbol)) return;
 
             await _client.UnsubscribeLv1(symbol);
             await _client.UnsubscribeTimeSales(symbol);
 
-            // 清除Bar数据
-            _barAggregator.Clear(symbol);
-
-            lock (_lock)
-            {
-                _quotes.Remove(symbol);
-            }
+            // 移除 SymbolState（会触发 SymbolRemoved 事件，其他 Manager 自动清理）
+            _dataManager.Remove(symbol);
 
             SymbolUnsubscribed?.Invoke(symbol);
         }
 
         /// <summary>
-        /// 获取当前报价
+        /// 获取当前选中股票的报价
         /// </summary>
         public Quote? GetCurrentQuote()
         {
-            if (string.IsNullOrEmpty(_currentSymbol)) return null;
-
-            lock (_lock)
-            {
-                return _quotes.TryGetValue(_currentSymbol, out var quote) ? quote : null;
-            }
+            return _dataManager.ActiveState?.Quote;
         }
 
         /// <summary>
-        /// 获取指定symbol的报价
+        /// 获取指定股票的报价
         /// </summary>
         public Quote? GetQuote(string symbol)
         {
-            lock (_lock)
-            {
-                return _quotes.TryGetValue(symbol, out var quote) ? quote : null;
-            }
+            return _dataManager.Get(symbol)?.Quote;
         }
     }
 }

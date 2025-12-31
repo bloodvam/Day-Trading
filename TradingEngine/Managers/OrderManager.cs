@@ -5,95 +5,55 @@ using TradingEngine.Parsers;
 namespace TradingEngine.Managers
 {
     /// <summary>
-    /// 待卖出信息
-    /// </summary>
-    public class PendingSellInfo
-    {
-        public int SellShares { get; set; }
-        public double SellLimitPrice { get; set; }
-        public double StopTriggerPrice { get; set; }
-        public double StopLimitPrice { get; set; }
-        public bool IsSellAll { get; set; }
-    }
-
-    /// <summary>
-    /// 追踪最后一次买入的成交信息
-    /// </summary>
-    public class LastBuyInfo
-    {
-        public int Token { get; set; }
-        public int OrderId { get; set; }
-        public double TotalCost { get; set; }
-        public int TotalQty { get; set; }
-        public double AvgPrice { get; set; }
-
-        public void Reset(int token)
-        {
-            Token = token;
-            OrderId = 0;
-            TotalCost = 0;
-            TotalQty = 0;
-            // 不清空 AvgPrice，保留上一次的值
-        }
-
-        public void AddTrade(double price, int qty)
-        {
-            TotalCost += price * qty;
-            TotalQty += qty;
-            AvgPrice = TotalCost / TotalQty;
-        }
-    }
-
-    /// <summary>
     /// 订单管理 - 处理下单逻辑和自动止损
     /// </summary>
-    public class OrderManager
+    public class OrderManager : IDisposable
     {
         private readonly DasClient _client;
         private readonly AccountManager _accountManager;
-        private readonly SubscriptionManager _subscriptionManager;
+        private readonly SymbolDataManager _dataManager;
         private readonly BarAggregator _barAggregator;
 
         private readonly object _lock = new();
 
-        // 追踪待挂止损的买入订单: Token -> (StopPrice, EntryBar)
-        private readonly Dictionary<int, (double stopPrice, Bar entryBar)> _pendingStops = new();
-
-        // 追踪待卖出操作: Symbol -> PendingSellInfo
-        // 流程: 保存止损价 → Cancel止损单 → OrderRemoved触发 → 发卖出单 → PositionChanged触发 → 重挂止损
-        private readonly Dictionary<string, PendingSellInfo> _pendingSell = new();
-
-        // 追踪 MoveStopToBreakeven: 标记哪个 symbol 需要在止损单取消后挂新止损
-        private string? _pendingMoveStopSymbol;
-
-        // 追踪最后一次买入的成交价
-        private readonly LastBuyInfo _lastBuy = new();
+        // 追踪待挂止损的买入订单: Token -> (StopPrice, EntryBar, Symbol)
+        private readonly Dictionary<int, (double stopPrice, Bar entryBar, string symbol)> _pendingStops = new();
 
         public event Action<string>? Log;
-        public event Action<int>? NewOrderSent;  // 发送 NEWORDER 时触发，参数是 token
+        public event Action<int>? NewOrderSent;
 
         public OrderManager(
             DasClient client,
             AccountManager accountManager,
-            SubscriptionManager subscriptionManager,
+            SymbolDataManager dataManager,
             BarAggregator barAggregator)
         {
             _client = client;
             _accountManager = accountManager;
-            _subscriptionManager = subscriptionManager;
+            _dataManager = dataManager;
             _barAggregator = barAggregator;
 
-            // 监听订单成交，自动挂止损（买入成交后）
             _accountManager.OrderExecuted += OnOrderExecuted;
-
-            // 监听订单移除（止损单取消后发卖出单）
             _accountManager.OrderRemoved += OnOrderRemoved;
-
-            // 监听持仓变化（卖出后重挂止损）
             _accountManager.PositionChanged += OnPositionChanged;
-
-            // 监听成交，追踪买入成交价
             _client.TradeUpdate += OnTradeUpdate;
+
+            // 监听 symbol 移除事件，自动清理 pending 数据
+            _dataManager.SymbolRemoved += OnSymbolRemoved;
+        }
+
+        public void Dispose()
+        {
+            _accountManager.OrderExecuted -= OnOrderExecuted;
+            _accountManager.OrderRemoved -= OnOrderRemoved;
+            _accountManager.PositionChanged -= OnPositionChanged;
+            _client.TradeUpdate -= OnTradeUpdate;
+            _dataManager.SymbolRemoved -= OnSymbolRemoved;
+        }
+
+        private void OnSymbolRemoved(string symbol)
+        {
+            ClearSymbolPendingData(symbol);
         }
 
         private int GetNextToken()
@@ -108,35 +68,43 @@ namespace TradingEngine.Managers
         /// </summary>
         private async void OnOrderExecuted(Order order)
         {
-            if (order.Side != OrderSide.Buy) return;
-
-            // 记录最后一次买入的 OrderId
-            lock (_lock)
+            try
             {
-                if (order.Token == _lastBuy.Token && _lastBuy.OrderId == 0)
+                if (order.Side != OrderSide.Buy) return;
+
+                var state = _dataManager.Get(order.Symbol);
+                if (state == null) return;
+
+                // 记录最后一次买入的 OrderId
+                lock (_lock)
                 {
-                    _lastBuy.OrderId = order.OrderId;
-                    Log?.Invoke($"LastBuy: Token {order.Token} -> OrderId {order.OrderId}");
+                    if (order.Token == state.LastBuy.Token && state.LastBuy.OrderId == 0)
+                    {
+                        state.LastBuy.OrderId = order.OrderId;
+                        Log?.Invoke($"LastBuy [{order.Symbol}]: Token {order.Token} -> OrderId {order.OrderId}");
+                    }
                 }
-            }
 
-            (double stopPrice, Bar entryBar) pendingStop;
-            lock (_lock)
+                (double stopPrice, Bar entryBar, string symbol) pendingStop;
+                lock (_lock)
+                {
+                    if (!_pendingStops.TryGetValue(order.Token, out pendingStop))
+                        return;
+
+                    _pendingStops.Remove(order.Token);
+                }
+
+                var position = _accountManager.GetPosition(order.Symbol);
+                int totalShares = position?.Quantity ?? order.FilledQuantity;
+
+                Log?.Invoke($"Buy order {order.OrderId} executed, placing stop for {totalShares} shares at {pendingStop.stopPrice:F2}");
+
+                await PlaceStopOrder(order.Symbol, totalShares, pendingStop.stopPrice);
+            }
+            catch (Exception ex)
             {
-                if (!_pendingStops.TryGetValue(order.Token, out pendingStop))
-                    return;
-
-                _pendingStops.Remove(order.Token);
+                Log?.Invoke($"OnOrderExecuted error: {ex.Message}");
             }
-
-            // 获取当前总持仓
-            var position = _accountManager.GetPosition(order.Symbol);
-            int totalShares = position?.Quantity ?? order.FilledQuantity;
-
-            Log?.Invoke($"Buy order {order.OrderId} executed, placing stop for {totalShares} shares at {pendingStop.stopPrice:F2}");
-
-            // 挂止损单
-            await PlaceStopOrder(order.Symbol, totalShares, pendingStop.stopPrice);
         }
 
         /// <summary>
@@ -144,62 +112,63 @@ namespace TradingEngine.Managers
         /// </summary>
         private async void OnOrderRemoved(Order order)
         {
-            // 只处理止损单被取消的情况
-            if (order.Status != OrderStatus.Canceled) return;
-            if (order.Type != OrderType.StopLimit &&
-                order.Type != OrderType.StopLimitPost &&
-                order.Type != OrderType.StopMarket) return;
-
-            // 先检查是不是 MoveStopToBreakeven
-            bool isMoveStop = false;
-            lock (_lock)
+            try
             {
-                if (_pendingMoveStopSymbol == order.Symbol)
+                if (order.Status != OrderStatus.Canceled) return;
+                if (order.Type != OrderType.StopLimit &&
+                    order.Type != OrderType.StopLimitPost &&
+                    order.Type != OrderType.StopMarket) return;
+
+                var state = _dataManager.Get(order.Symbol);
+                if (state == null) return;
+
+                // 先检查是不是 MoveStopToBreakeven
+                bool isMoveStop = false;
+                lock (_lock)
                 {
-                    _pendingMoveStopSymbol = null;
-                    isMoveStop = true;
+                    if (state.PendingMoveStop)
+                    {
+                        state.PendingMoveStop = false;
+                        isMoveStop = true;
+                    }
                 }
-            }
 
-            if (isMoveStop)
-            {
-                // MoveStopToBreakeven 流程
-                var position = _accountManager.GetPosition(order.Symbol);
-                if (position != null && position.Quantity > 0)
+                if (isMoveStop)
                 {
-                    // 优先使用最后一次买入的成交均价，如果没有则用持仓均价
-                    double breakevenPrice = _lastBuy.AvgPrice > 0 ? _lastBuy.AvgPrice : position.AvgCost;
-                    Log?.Invoke($"Stop order {order.OrderId} canceled, placing new stop at breakeven {breakevenPrice:F2}");
-                    await PlaceStopOrder(order.Symbol, position.Quantity, breakevenPrice);
-                }
-                return;
-            }
-
-            // 否则是卖出流程
-            PendingSellInfo? pendingSell;
-            lock (_lock)
-            {
-                if (!_pendingSell.TryGetValue(order.Symbol, out pendingSell))
+                    var position = _accountManager.GetPosition(order.Symbol);
+                    if (position != null && position.Quantity > 0)
+                    {
+                        double breakevenPrice = state.LastBuy.AvgPrice > 0 ? state.LastBuy.AvgPrice : position.AvgCost;
+                        Log?.Invoke($"Stop order {order.OrderId} canceled, placing new stop at breakeven {breakevenPrice:F2}");
+                        await PlaceStopOrder(order.Symbol, position.Quantity, breakevenPrice);
+                    }
                     return;
-                // 不要移除 _pendingSell，等 PositionChanged 后再移除
+                }
+
+                // 否则是卖出流程
+                var pendingSell = state.PendingSell;
+                if (pendingSell == null) return;
+
+                Log?.Invoke($"Stop order {order.OrderId} canceled, now placing sell order");
+
+                var config = AppConfig.Instance.Trading;
+                int token = GetNextToken();
+
+                NewOrderSent?.Invoke(token);
+                await _client.PlaceLimitOrder(
+                    token,
+                    "S",
+                    order.Symbol,
+                    config.SellRoute,
+                    pendingSell.SellShares,
+                    pendingSell.SellLimitPrice,
+                    "DAY+"
+                );
             }
-
-            Log?.Invoke($"Stop order {order.OrderId} canceled, now placing sell order");
-
-            // 发卖出单
-            var config = AppConfig.Instance.Trading;
-            int token = GetNextToken();
-
-            NewOrderSent?.Invoke(token);
-            await _client.PlaceLimitOrder(
-                token,
-                "S",
-                order.Symbol,
-                config.SellRoute,
-                pendingSell.SellShares,
-                pendingSell.SellLimitPrice,
-                "DAY+"
-            );
+            catch (Exception ex)
+            {
+                Log?.Invoke($"OnOrderRemoved error: {ex.Message}");
+            }
         }
 
         /// <summary>
@@ -207,32 +176,36 @@ namespace TradingEngine.Managers
         /// </summary>
         private async void OnPositionChanged(Position pos)
         {
-            PendingSellInfo? pendingSell;
-            lock (_lock)
+            try
             {
-                if (!_pendingSell.TryGetValue(pos.Symbol, out pendingSell))
+                var state = _dataManager.Get(pos.Symbol);
+                if (state == null) return;
+
+                var pendingSell = state.PendingSell;
+                if (pendingSell == null) return;
+
+                // 清除 PendingSell
+                state.PendingSell = null;
+
+                if (pendingSell.IsSellAll)
+                {
+                    Log?.Invoke($"Sell all completed for {pos.Symbol}, no stop order needed");
                     return;
+                }
 
-                // 移除 _pendingSell
-                _pendingSell.Remove(pos.Symbol);
+                if (pos.Quantity > 0 && pendingSell.StopTriggerPrice > 0)
+                {
+                    Log?.Invoke($"Position updated for {pos.Symbol}: {pos.Quantity} shares, re-placing stop at {pendingSell.StopTriggerPrice:F2}");
+                    await PlaceStopOrder(pos.Symbol, pos.Quantity, pendingSell.StopTriggerPrice);
+                }
+                else
+                {
+                    Log?.Invoke($"Position cleared for {pos.Symbol}, no stop order needed");
+                }
             }
-
-            // 如果是全部卖出，不需要重挂止损
-            if (pendingSell.IsSellAll)
+            catch (Exception ex)
             {
-                Log?.Invoke($"Sell all completed for {pos.Symbol}, no stop order needed");
-                return;
-            }
-
-            // 如果还有剩余持仓，重新挂止损
-            if (pos.Quantity > 0 && pendingSell.StopTriggerPrice > 0)
-            {
-                Log?.Invoke($"Position updated for {pos.Symbol}: {pos.Quantity} shares, re-placing stop at {pendingSell.StopTriggerPrice:F2}");
-                await PlaceStopOrder(pos.Symbol, pos.Quantity, pendingSell.StopTriggerPrice);
-            }
-            else
-            {
-                Log?.Invoke($"Position cleared for {pos.Symbol}, no stop order needed");
+                Log?.Invoke($"OnPositionChanged error: {ex.Message}");
             }
         }
 
@@ -247,12 +220,15 @@ namespace TradingEngine.Managers
                 if (trade == null) return;
                 if (trade.Side != OrderSide.Buy) return;
 
+                var state = _dataManager.Get(trade.Symbol);
+                if (state == null) return;
+
                 lock (_lock)
                 {
-                    if (trade.OrderId == _lastBuy.OrderId && _lastBuy.OrderId != 0)
+                    if (trade.OrderId == state.LastBuy.OrderId && state.LastBuy.OrderId != 0)
                     {
-                        _lastBuy.AddTrade(trade.Price, trade.Quantity);
-                        Log?.Invoke($"LastBuy Trade: OrderId={trade.OrderId}, Price={trade.Price:F2}, Qty={trade.Quantity}, AvgPrice={_lastBuy.AvgPrice:F2}");
+                        state.LastBuy.AddTrade(trade.Price, trade.Quantity);
+                        Log?.Invoke($"LastBuy Trade [{trade.Symbol}]: OrderId={trade.OrderId}, Price={trade.Price:F2}, Qty={trade.Quantity}, AvgPrice={state.LastBuy.AvgPrice:F2}");
                     }
                 }
             }
@@ -266,14 +242,11 @@ namespace TradingEngine.Managers
 
         #region Smart Stop Price
 
-        /// <summary>
-        /// 计算止损价 - 智能判断使用当前bar还是前一根bar的Low
-        /// </summary>
         private (double stopPrice, bool usedLastBar) GetSmartStopPrice(string symbol, double bid)
         {
             var currentBar = _barAggregator.GetCurrentBar(symbol);
             var lastBar = _barAggregator.GetLastCompletedBar(symbol);
-            var quote = _subscriptionManager.GetCurrentQuote();
+            var state = _dataManager.Get(symbol);
 
             if (currentBar == null || currentBar.Low <= 0)
             {
@@ -284,7 +257,6 @@ namespace TradingEngine.Managers
             double stopPrice = currentLow;
             bool usedLastBar = false;
 
-            // 条件1：任何时候，bid <= currentBar.Low
             if (bid <= currentLow)
             {
                 if (lastBar != null && lastBar.Low > 0)
@@ -294,11 +266,10 @@ namespace TradingEngine.Managers
                     Log?.Invoke($"[StopLogic] bid({bid:F2}) <= currentLow({currentLow:F2}), using lastBar.Low({stopPrice:F2})");
                 }
             }
-            // 条件2：新bar的第0秒内，bid - currentBar.Low <= 0.01
-            else if (lastBar != null && lastBar.Low > 0 && quote != null)
+            else if (lastBar != null && lastBar.Low > 0 && state?.Quote != null)
             {
                 int barInterval = currentBar.IntervalSeconds;
-                double quoteSeconds = quote.UpdateTime.TimeOfDay.TotalSeconds;
+                double quoteSeconds = state.Quote.UpdateTime.TimeOfDay.TotalSeconds;
                 double elapsed = quoteSeconds % barInterval;
 
                 bool isFirstSecond = (elapsed == 0);
@@ -318,13 +289,10 @@ namespace TradingEngine.Managers
 
         #region Trading Actions
 
-        /// <summary>
-        /// 买入1R仓位
-        /// </summary>
         public async Task<bool> BuyOneR()
         {
             var config = AppConfig.Instance.Trading;
-            string? symbol = _subscriptionManager.CurrentSymbol;
+            string? symbol = _dataManager.ActiveSymbol;
 
             if (string.IsNullOrEmpty(symbol))
             {
@@ -332,8 +300,8 @@ namespace TradingEngine.Managers
                 return false;
             }
 
-            var quote = _subscriptionManager.GetCurrentQuote();
-            if (quote == null || quote.Ask <= 0 || quote.Bid <= 0)
+            var state = _dataManager.Get(symbol);
+            if (state == null || state.Quote.Ask <= 0 || state.Quote.Bid <= 0)
             {
                 Log?.Invoke($"No valid quote for {symbol}");
                 return false;
@@ -346,10 +314,9 @@ namespace TradingEngine.Managers
                 return false;
             }
 
-            double askPrice = quote.Ask;
-            double bidPrice = quote.Bid;
+            double askPrice = state.Quote.Ask;
+            double bidPrice = state.Quote.Bid;
 
-            // 智能计算止损价
             var (stopPrice, usedLastBar) = GetSmartStopPrice(symbol, bidPrice);
             if (stopPrice <= 0)
             {
@@ -365,7 +332,6 @@ namespace TradingEngine.Managers
                 return false;
             }
 
-            // 计算股数: 风险金额 / 每股风险
             int shares = (int)(config.RiskAmount / riskPerShare);
             if (shares <= 0)
             {
@@ -373,16 +339,14 @@ namespace TradingEngine.Managers
                 return false;
             }
 
-            // 限价 = Ask * (1 + spread)
             double limitPrice = Math.Round(askPrice * (1 + config.SpreadPercent), 2);
 
             int token = GetNextToken();
 
-            // 记录待挂止损信息和最后一次买入
             lock (_lock)
             {
-                _pendingStops[token] = (stopPrice, currentBar.Clone());
-                _lastBuy.Reset(token);
+                _pendingStops[token] = (stopPrice, currentBar.Clone(), symbol);
+                state.LastBuy.Reset(token);
             }
 
             string barInfo = usedLastBar ? "LastBar" : "CurrentBar";
@@ -402,13 +366,10 @@ namespace TradingEngine.Managers
             return true;
         }
 
-        /// <summary>
-        /// 卖出全部持仓
-        /// </summary>
         public async Task<bool> SellAll()
         {
             var config = AppConfig.Instance.Trading;
-            string? symbol = _subscriptionManager.CurrentSymbol;
+            string? symbol = _dataManager.ActiveSymbol;
 
             if (string.IsNullOrEmpty(symbol))
             {
@@ -416,6 +377,7 @@ namespace TradingEngine.Managers
                 return false;
             }
 
+            var state = _dataManager.Get(symbol);
             var position = _accountManager.GetPosition(symbol);
             if (position == null || position.Quantity <= 0)
             {
@@ -423,43 +385,34 @@ namespace TradingEngine.Managers
                 return false;
             }
 
-            var quote = _subscriptionManager.GetCurrentQuote();
-            if (quote == null || quote.Bid <= 0)
+            if (state == null || state.Quote.Bid <= 0)
             {
                 Log?.Invoke($"No valid quote for {symbol}");
                 return false;
             }
 
-            // 限价 = Bid * (1 - spread)
-            double limitPrice = Math.Round(quote.Bid * (1 - config.SpreadPercent), 2);
+            double limitPrice = Math.Round(state.Quote.Bid * (1 - config.SpreadPercent), 2);
             int shares = position.Quantity;
 
-            Log?.Invoke($"SELL ALL {symbol} {shares}@{limitPrice:F2} (Bid={quote.Bid:F2})");
+            Log?.Invoke($"SELL ALL {symbol} {shares}@{limitPrice:F2} (Bid={state.Quote.Bid:F2})");
 
-            // 查找止损单
             var stopOrder = _accountManager.GetStopOrder(symbol);
             if (stopOrder != null)
             {
-                // 保存卖出信息，等止损单取消后执行
-                lock (_lock)
+                state.PendingSell = new PendingSellInfo
                 {
-                    _pendingSell[symbol] = new PendingSellInfo
-                    {
-                        SellShares = shares,
-                        SellLimitPrice = limitPrice,
-                        StopTriggerPrice = 0,  // 全部卖出，不需要重挂止损
-                        StopLimitPrice = 0,
-                        IsSellAll = true
-                    };
-                }
+                    SellShares = shares,
+                    SellLimitPrice = limitPrice,
+                    StopTriggerPrice = 0,
+                    StopLimitPrice = 0,
+                    IsSellAll = true
+                };
 
-                // 取消止损单（会触发 OnOrderRemoved）
                 Log?.Invoke($"Canceling stop order {stopOrder.OrderId} before sell");
                 await _client.CancelOrder(stopOrder.OrderId);
             }
             else
             {
-                // 没有止损单，直接卖
                 int token = GetNextToken();
                 NewOrderSent?.Invoke(token);
                 await _client.PlaceLimitOrder(
@@ -476,29 +429,20 @@ namespace TradingEngine.Managers
             return true;
         }
 
-        /// <summary>
-        /// 卖出一半持仓
-        /// </summary>
         public async Task<bool> SellHalf()
         {
             return await SellPercent(50, "HALF");
         }
 
-        /// <summary>
-        /// 卖出70%持仓
-        /// </summary>
         public async Task<bool> Sell70Percent()
         {
             return await SellPercent(70, "70%");
         }
 
-        /// <summary>
-        /// 卖出指定百分比持仓
-        /// </summary>
         private async Task<bool> SellPercent(int percent, string label)
         {
             var config = AppConfig.Instance.Trading;
-            string? symbol = _subscriptionManager.CurrentSymbol;
+            string? symbol = _dataManager.ActiveSymbol;
 
             if (string.IsNullOrEmpty(symbol))
             {
@@ -506,6 +450,7 @@ namespace TradingEngine.Managers
                 return false;
             }
 
+            var state = _dataManager.Get(symbol);
             var position = _accountManager.GetPosition(symbol);
             if (position == null || position.Quantity <= 0)
             {
@@ -513,8 +458,7 @@ namespace TradingEngine.Managers
                 return false;
             }
 
-            var quote = _subscriptionManager.GetCurrentQuote();
-            if (quote == null || quote.Bid <= 0)
+            if (state == null || state.Quote.Bid <= 0)
             {
                 Log?.Invoke($"No valid quote for {symbol}");
                 return false;
@@ -527,34 +471,27 @@ namespace TradingEngine.Managers
                 return false;
             }
 
-            double limitPrice = Math.Round(quote.Bid * (1 - config.SpreadPercent), 2);
+            double limitPrice = Math.Round(state.Quote.Bid * (1 - config.SpreadPercent), 2);
 
-            Log?.Invoke($"SELL {label} {symbol} {shares}@{limitPrice:F2} (Bid={quote.Bid:F2})");
+            Log?.Invoke($"SELL {label} {symbol} {shares}@{limitPrice:F2} (Bid={state.Quote.Bid:F2})");
 
-            // 查找止损单
             var stopOrder = _accountManager.GetStopOrder(symbol);
             if (stopOrder != null)
             {
-                // 保存卖出信息和止损价，等止损单取消后执行
-                lock (_lock)
+                state.PendingSell = new PendingSellInfo
                 {
-                    _pendingSell[symbol] = new PendingSellInfo
-                    {
-                        SellShares = shares,
-                        SellLimitPrice = limitPrice,
-                        StopTriggerPrice = stopOrder.StopPrice,
-                        StopLimitPrice = stopOrder.Price,
-                        IsSellAll = false
-                    };
-                }
+                    SellShares = shares,
+                    SellLimitPrice = limitPrice,
+                    StopTriggerPrice = stopOrder.StopPrice,
+                    StopLimitPrice = stopOrder.Price,
+                    IsSellAll = false
+                };
 
-                // 取消止损单
                 Log?.Invoke($"Canceling stop order {stopOrder.OrderId} (Trigger={stopOrder.StopPrice:F2}) before sell");
                 await _client.CancelOrder(stopOrder.OrderId);
             }
             else
             {
-                // 没有止损单，直接卖
                 Log?.Invoke($"No stop order found, selling directly");
                 int token = GetNextToken();
                 NewOrderSent?.Invoke(token);
@@ -572,28 +509,19 @@ namespace TradingEngine.Managers
             return true;
         }
 
-        /// <summary>
-        /// 保本加仓
-        /// </summary>
         public async Task<bool> AddPositionBreakeven()
         {
             return await AddPositionWithProfitTarget(0);
         }
 
-        /// <summary>
-        /// 保半利加仓
-        /// </summary>
         public async Task<bool> AddPositionHalfProfit()
         {
             return await AddPositionWithProfitTarget(0.5);
         }
 
-        /// <summary>
-        /// 移动止损到成本价
-        /// </summary>
         public async Task<bool> MoveStopToBreakeven()
         {
-            string? symbol = _subscriptionManager.CurrentSymbol;
+            string? symbol = _dataManager.ActiveSymbol;
 
             if (string.IsNullOrEmpty(symbol))
             {
@@ -601,6 +529,7 @@ namespace TradingEngine.Managers
                 return false;
             }
 
+            var state = _dataManager.Get(symbol);
             var position = _accountManager.GetPosition(symbol);
             if (position == null || position.Quantity <= 0)
             {
@@ -608,41 +537,33 @@ namespace TradingEngine.Managers
                 return false;
             }
 
-            // 优先使用最后一次买入的成交均价，如果没有则用持仓均价
-            double breakevenPrice = _lastBuy.AvgPrice > 0 ? _lastBuy.AvgPrice : position.AvgCost;
+            double breakevenPrice = state?.LastBuy.AvgPrice > 0 ? state.LastBuy.AvgPrice : position.AvgCost;
             int shares = position.Quantity;
 
-            Log?.Invoke($"Moving stop to breakeven: {symbol} {shares}@{breakevenPrice:F2} (LastBuyAvg={_lastBuy.AvgPrice:F2}, PositionAvg={position.AvgCost:F2})");
+            Log?.Invoke($"Moving stop to breakeven: {symbol} {shares}@{breakevenPrice:F2} (LastBuyAvg={state?.LastBuy.AvgPrice:F2}, PositionAvg={position.AvgCost:F2})");
 
-            // 查找旧止损单
             var stopOrder = _accountManager.GetStopOrder(symbol);
             if (stopOrder != null)
             {
-                // 标记这个 symbol 需要 move stop
-                lock (_lock)
+                if (state != null)
                 {
-                    _pendingMoveStopSymbol = symbol;
+                    state.PendingMoveStop = true;
                 }
 
-                // 取消旧止损单（会触发 OnOrderRemoved）
                 await _client.CancelOrder(stopOrder.OrderId);
             }
             else
             {
-                // 没有旧止损单，直接挂新的
                 await PlaceStopOrder(symbol, shares, breakevenPrice);
             }
 
             return true;
         }
 
-        /// <summary>
-        /// 根据目标利润比例加仓
-        /// </summary>
         private async Task<bool> AddPositionWithProfitTarget(double profitRatio)
         {
             var config = AppConfig.Instance.Trading;
-            string? symbol = _subscriptionManager.CurrentSymbol;
+            string? symbol = _dataManager.ActiveSymbol;
 
             if (string.IsNullOrEmpty(symbol))
             {
@@ -650,6 +571,7 @@ namespace TradingEngine.Managers
                 return false;
             }
 
+            var state = _dataManager.Get(symbol);
             var position = _accountManager.GetPosition(symbol);
             if (position == null || position.Quantity <= 0)
             {
@@ -657,8 +579,7 @@ namespace TradingEngine.Managers
                 return false;
             }
 
-            var quote = _subscriptionManager.GetCurrentQuote();
-            if (quote == null || quote.Ask <= 0 || quote.Bid <= 0)
+            if (state == null || state.Quote.Ask <= 0 || state.Quote.Bid <= 0)
             {
                 Log?.Invoke($"No valid quote for {symbol}");
                 return false;
@@ -673,10 +594,9 @@ namespace TradingEngine.Managers
 
             double avgCost = position.AvgCost;
             int currentQty = position.Quantity;
-            double bidPrice = quote.Bid;
-            double askPrice = quote.Ask;
+            double bidPrice = state.Quote.Bid;
+            double askPrice = state.Quote.Ask;
 
-            // 智能计算止损价
             var (stopPrice, usedLastBar) = GetSmartStopPrice(symbol, bidPrice);
             if (stopPrice <= 0)
             {
@@ -684,7 +604,6 @@ namespace TradingEngine.Managers
                 return false;
             }
 
-            // 当前浮盈
             double currentProfit = (bidPrice - avgCost) * currentQty;
             if (currentProfit <= 0)
             {
@@ -722,11 +641,10 @@ namespace TradingEngine.Managers
 
             int token = GetNextToken();
 
-            // 记录待挂止损信息和最后一次买入
             lock (_lock)
             {
-                _pendingStops[token] = (stopPrice, currentBar.Clone());
-                _lastBuy.Reset(token);
+                _pendingStops[token] = (stopPrice, currentBar.Clone(), symbol);
+                state.LastBuy.Reset(token);
             }
 
             string mode = profitRatio == 0 ? "BREAKEVEN" : $"KEEP {profitRatio * 100:F0}% PROFIT";
@@ -735,7 +653,6 @@ namespace TradingEngine.Managers
             Log?.Invoke($"  Current: {currentQty}@{avgCost:F2}, Profit={currentProfit:F2}");
             Log?.Invoke($"  New Stop={stopPrice:F2} [{barInfo}], TargetProfit={targetProfit:F2}");
 
-            // 先取消旧止损单
             var stopOrder = _accountManager.GetStopOrder(symbol);
             if (stopOrder != null)
             {
@@ -760,14 +677,10 @@ namespace TradingEngine.Managers
 
         #region Helper Methods
 
-        /// <summary>
-        /// 挂止损单
-        /// </summary>
         private async Task PlaceStopOrder(string symbol, int shares, double stopPrice)
         {
             var config = AppConfig.Instance.Trading;
 
-            // 止损限价 = StopPrice * (1 - spread)
             double limitPrice = Math.Round(stopPrice * (1 - config.SpreadPercent), 2);
             int token = GetNextToken();
 
@@ -786,9 +699,6 @@ namespace TradingEngine.Managers
             );
         }
 
-        /// <summary>
-        /// 取消所有挂单
-        /// </summary>
         public async Task CancelAllOrders()
         {
             await _client.CancelAll();
@@ -796,9 +706,36 @@ namespace TradingEngine.Managers
             lock (_lock)
             {
                 _pendingStops.Clear();
-                _pendingSell.Clear();
-                _pendingMoveStopSymbol = null;
             }
+
+            // 清除所有 symbol 的 pending 状态
+            _dataManager.ForEach(state =>
+            {
+                state.PendingSell = null;
+                state.PendingMoveStop = false;
+            });
+        }
+
+        /// <summary>
+        /// 清理指定 symbol 的 pending 数据（SymbolRemoved 事件触发）
+        /// </summary>
+        private void ClearSymbolPendingData(string symbol)
+        {
+            lock (_lock)
+            {
+                // 清理 _pendingStops 中该 symbol 的记录
+                var tokensToRemove = _pendingStops
+                    .Where(kvp => kvp.Value.symbol == symbol)
+                    .Select(kvp => kvp.Key)
+                    .ToList();
+
+                foreach (var token in tokensToRemove)
+                {
+                    _pendingStops.Remove(token);
+                }
+            }
+
+            // SymbolState 中的 PendingSell 和 PendingMoveStop 会随 SymbolDataManager.Remove 一起被清除
         }
 
         #endregion

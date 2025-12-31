@@ -10,6 +10,7 @@ namespace TradingEngine.Core
     public class TradingController : IDisposable
     {
         private readonly DasClient _client;
+        private readonly SymbolDataManager _dataManager;
         private readonly BarAggregator _barAggregator;
         private readonly AccountManager _accountManager;
         private readonly SubscriptionManager _subscriptionManager;
@@ -21,7 +22,8 @@ namespace TradingEngine.Core
 
         public bool IsConnected => _client.IsConnected;
         public bool IsLoggedIn => _client.IsLoggedIn;
-        public string? CurrentSymbol => _subscriptionManager.CurrentSymbol;
+        public string? ActiveSymbol => _dataManager.ActiveSymbol;
+        public IReadOnlyCollection<string> SubscribedSymbols => _dataManager.Symbols;
         public AccountInfo AccountInfo => _accountManager.AccountInfo;
 
         #endregion
@@ -39,7 +41,9 @@ namespace TradingEngine.Core
 
         public event Action<string>? SymbolSubscribed;
         public event Action<string>? SymbolUnsubscribed;
+        public event Action<string?>? ActiveSymbolChanged;
         public event Action<Quote>? QuoteUpdated;
+        public event Action<Quote>? AnyQuoteUpdated;
         public event Action<Bar>? BarUpdated;
         public event Action<Bar>? BarCompleted;
 
@@ -56,8 +60,8 @@ namespace TradingEngine.Core
 
         #region Events - Order Tracking
 
-        public event Action? NewOperationStarted;  // 用户按热键开始新操作
-        public event Action<int>? NewOrderSent;    // 发送 NEWORDER，参数是 token
+        public event Action? NewOperationStarted;
+        public event Action<int>? NewOrderSent;
 
         #endregion
 
@@ -76,12 +80,15 @@ namespace TradingEngine.Core
 
         public TradingController()
         {
-            // 初始化所有Manager
+            // 初始化核心数据管理
             _client = new DasClient();
-            _barAggregator = new BarAggregator(AppConfig.Instance.Trading.DefaultBarInterval);
-            _accountManager = new AccountManager(_client);
-            _subscriptionManager = new SubscriptionManager(_client, _barAggregator);
-            _orderManager = new OrderManager(_client, _accountManager, _subscriptionManager, _barAggregator);
+            _dataManager = new SymbolDataManager();
+            _barAggregator = new BarAggregator(_dataManager, AppConfig.Instance.Trading.DefaultBarInterval);
+
+            // 初始化业务管理器
+            _accountManager = new AccountManager(_client, _dataManager);
+            _subscriptionManager = new SubscriptionManager(_client, _dataManager, _barAggregator);
+            _orderManager = new OrderManager(_client, _accountManager, _dataManager, _barAggregator);
 
             SubscribeInternalEvents();
         }
@@ -98,13 +105,23 @@ namespace TradingEngine.Core
             };
             _client.LoginFailed += (msg) => LoginFailed?.Invoke(msg);
 
-            // Subscription events
-            _subscriptionManager.SymbolSubscribed += (s) => SymbolSubscribed?.Invoke(s);
-            _subscriptionManager.SymbolUnsubscribed += (s) => SymbolUnsubscribed?.Invoke(s);
-            _subscriptionManager.QuoteUpdated += (q) => QuoteUpdated?.Invoke(q);
+            // SymbolDataManager events
+            _dataManager.SymbolAdded += (s) => SymbolSubscribed?.Invoke(s);
+            _dataManager.SymbolRemoved += (s) => SymbolUnsubscribed?.Invoke(s);
+            _dataManager.ActiveSymbolChanged += (s) => ActiveSymbolChanged?.Invoke(s);
 
-            // Bar events
-            _barAggregator.BarUpdated += (b) => BarUpdated?.Invoke(b);
+            // Subscription events
+            _subscriptionManager.QuoteUpdated += (q) => QuoteUpdated?.Invoke(q);
+            _subscriptionManager.AnyQuoteUpdated += (q) => AnyQuoteUpdated?.Invoke(q);
+
+            // Bar events - 只触发 ActiveSymbol 的
+            _barAggregator.BarUpdated += (b) =>
+            {
+                if (b.Symbol == _dataManager.ActiveSymbol)
+                {
+                    BarUpdated?.Invoke(b);
+                }
+            };
             _barAggregator.BarCompleted += (b) => BarCompleted?.Invoke(b);
 
             // Account events
@@ -143,15 +160,17 @@ namespace TradingEngine.Core
         {
             if (string.IsNullOrWhiteSpace(symbol)) return;
             await _subscriptionManager.SubscribeAsync(symbol);
-            Log?.Invoke($"Subscribed to {symbol}");
         }
 
-        public async Task UnsubscribeAsync()
+        public async Task UnsubscribeAsync(string symbol)
         {
-            var symbol = _subscriptionManager.CurrentSymbol;
-            if (string.IsNullOrEmpty(symbol)) return;
-            await _subscriptionManager.UnsubscribeCurrentAsync();
-            Log?.Invoke($"Unsubscribed from {symbol}");
+            if (string.IsNullOrWhiteSpace(symbol)) return;
+            await _subscriptionManager.UnsubscribeAsync(symbol);
+        }
+
+        public void SetActiveSymbol(string? symbol)
+        {
+            _dataManager.ActiveSymbol = symbol;
         }
 
         #endregion
@@ -273,14 +292,10 @@ namespace TradingEngine.Core
 
         #region Hotkeys
 
-        /// <summary>
-        /// 设置热键，返回 (allSuccess, failedKey)
-        /// </summary>
         public (bool allSuccess, string? failedKey) SetupHotkeys(Form form)
         {
             _hotkeyManager = new HotkeyManager(form);
 
-            // 用 Task.Run 让下单在线程池执行，不阻塞 UI 线程
             var hotkeys = new List<(Keys key, string name, Action action)>
             {
                 (Keys.D1 | Keys.Shift, "Shift+1", () => _ = Task.Run(BuyOneR)),
@@ -321,66 +336,66 @@ namespace TradingEngine.Core
 
         public Quote? GetCurrentQuote()
         {
-            return _subscriptionManager.GetCurrentQuote();
+            return _dataManager.ActiveState?.Quote;
+        }
+
+        public Quote? GetQuote(string symbol)
+        {
+            return _dataManager.Get(symbol)?.Quote;
         }
 
         public Bar? GetCurrentBar()
         {
-            var symbol = _subscriptionManager.CurrentSymbol;
+            var symbol = _dataManager.ActiveSymbol;
             if (string.IsNullOrEmpty(symbol)) return null;
             return _barAggregator.GetCurrentBar(symbol);
         }
 
-        /// <summary>
-        /// 获取所有持仓（Quantity != 0）
-        /// </summary>
+        public Bar? GetCurrentBar(string symbol)
+        {
+            return _barAggregator.GetCurrentBar(symbol);
+        }
+
         public List<Position> GetAllPositions()
         {
             return _accountManager.GetAllPositions();
         }
 
-        /// <summary>
-        /// 获取所有挂单（Accepted 状态）
-        /// </summary>
         public List<Order> GetAllOrders()
         {
             return _accountManager.GetAllOrders();
         }
 
-        /// <summary>
-        /// 获取指定时间周期的BarSeries
-        /// </summary>
         public BarSeries? GetBarSeries(int intervalSeconds)
         {
-            var symbol = _subscriptionManager.CurrentSymbol;
+            var symbol = _dataManager.ActiveSymbol;
             if (string.IsNullOrEmpty(symbol)) return null;
             return _barAggregator.GetBarSeries(symbol, intervalSeconds);
         }
 
-        /// <summary>
-        /// 获取主时间周期的BarSeries
-        /// </summary>
         public BarSeries? GetBarSeries()
         {
-            var symbol = _subscriptionManager.CurrentSymbol;
+            var symbol = _dataManager.ActiveSymbol;
             if (string.IsNullOrEmpty(symbol)) return null;
             return _barAggregator.GetBarSeries(symbol);
         }
 
-        /// <summary>
-        /// 启用一个时间周期
-        /// </summary>
         public void EnableBarInterval(BarInterval interval)
         {
             _barAggregator.EnableInterval(interval);
         }
 
-        /// <summary>
-        /// 设置主时间周期
-        /// </summary>
         public void SetPrimaryBarInterval(int intervalSeconds)
         {
             _barAggregator.SetPrimaryInterval(intervalSeconds);
+        }
+
+        /// <summary>
+        /// 获取 SymbolState（用于 UI 访问日志等）
+        /// </summary>
+        public SymbolState? GetSymbolState(string symbol)
+        {
+            return _dataManager.Get(symbol);
         }
 
         #endregion
@@ -388,6 +403,8 @@ namespace TradingEngine.Core
         public void Dispose()
         {
             _hotkeyManager?.Dispose();
+            _orderManager.Dispose();
+            _barAggregator.Dispose();
             _client.Dispose();
         }
     }

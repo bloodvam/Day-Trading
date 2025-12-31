@@ -1,31 +1,48 @@
-﻿using TradingEngine.Models;
+﻿using TradingEngine.Config;
+using TradingEngine.Models;
 using TradingEngine.Parsers;
 
 namespace TradingEngine.Managers
 {
     /// <summary>
     /// 管理账户信息、持仓、订单
-    /// _positions: 只存储 Quantity != 0 的持仓
-    /// _orders: 只存储 Accepted 状态的订单
+    /// BP = Equity * Leverage - Σ(持仓股数 * avgCost)
     /// </summary>
+    /// <summary>
+    /// 持仓信息（包含 Position 和 LastAvgCost）
+    /// </summary>
+    public class PositionInfo
+    {
+        public Position? Position { get; set; }
+        public double LastAvgCost { get; set; }  // 即使 Position 清零也保留，用于计算卖出 PL
+    }
+
     public class AccountManager
     {
         private readonly DasClient _client;
-        private readonly Dictionary<string, Position> _positions = new();
+        private readonly SymbolDataManager _dataManager;
         private readonly Dictionary<int, Order> _orders = new();
         private readonly object _lock = new();
+
+        // 独立存储 Position 和 AvgCost（不受 unsubscribe 影响）
+        private readonly Dictionary<string, PositionInfo> _positionInfos = new();
+
+        // 自己维护的 Equity 和 BP
+        private double _equity;
+        private double _buyingPower;
 
         public AccountInfo AccountInfo { get; private set; } = new();
 
         public event Action<AccountInfo>? AccountInfoChanged;
         public event Action<Position>? PositionChanged;
-        public event Action<Order>? OrderAdded;      // 新订单 Accepted
-        public event Action<Order>? OrderRemoved;    // 订单移除 (Canceled/Executed/Rejected/Closed)
-        public event Action<Order>? OrderExecuted;   // 订单成交
+        public event Action<Order>? OrderAdded;
+        public event Action<Order>? OrderRemoved;
+        public event Action<Order>? OrderExecuted;
 
-        public AccountManager(DasClient client)
+        public AccountManager(DasClient client, SymbolDataManager dataManager)
         {
             _client = client;
+            _dataManager = dataManager;
             SubscribeEvents();
         }
 
@@ -34,7 +51,7 @@ namespace TradingEngine.Managers
             _client.PosUpdate += OnPosUpdate;
             _client.OrderUpdate += OnOrderUpdate;
             _client.AccountInfoUpdate += OnAccountInfoUpdate;
-            _client.BPUpdate += OnBPUpdate;
+            _client.TradeUpdate += OnTradeUpdate;
         }
 
         #region Event Handlers
@@ -46,17 +63,37 @@ namespace TradingEngine.Managers
 
             lock (_lock)
             {
+                // 获取或创建 PositionInfo
+                if (!_positionInfos.TryGetValue(pos.Symbol, out var info))
+                {
+                    info = new PositionInfo();
+                    _positionInfos[pos.Symbol] = info;
+                }
+
+                // 更新 Position 和 LastAvgCost
                 if (pos.Quantity != 0)
                 {
-                    // 有持仓，添加或更新
-                    _positions[pos.Symbol] = pos;
+                    info.Position = pos;
+                    info.LastAvgCost = pos.AvgCost;
                 }
                 else
                 {
-                    // 没有持仓，移除
-                    _positions.Remove(pos.Symbol);
+                    info.Position = null;
+                    // 不清空 LastAvgCost，用于计算最后一笔卖出的 PL
                 }
+
+                // 重新计算 BP
+                RecalculateBuyingPower();
+                UpdateAccountInfo();
             }
+
+            // 如果订阅了，同步更新 SymbolState（用于 UI 高亮等）
+            var state = _dataManager.Get(pos.Symbol);
+            if (state != null)
+            {
+                state.Position = pos.Quantity != 0 ? pos : null;
+            }
+
             PositionChanged?.Invoke(pos);
         }
 
@@ -74,7 +111,6 @@ namespace TradingEngine.Managers
 
                 if (order.Status == OrderStatus.Accepted)
                 {
-                    // Accepted 状态，添加到 dictionary
                     if (!existsInDict)
                     {
                         wasAdded = true;
@@ -87,32 +123,48 @@ namespace TradingEngine.Managers
                          order.Status == OrderStatus.Closed ||
                          order.Status == OrderStatus.Hold)
                 {
-                    // 这些状态，从 dictionary 移除
                     if (existsInDict)
                     {
                         _orders.Remove(order.OrderId);
                         wasRemoved = true;
                     }
                 }
-                // Partial, Sending 等状态保持原样
                 else if (existsInDict)
                 {
                     _orders[order.OrderId] = order;
                 }
             }
 
-            // 触发事件
-            if (wasAdded)
+            if (wasAdded) OrderAdded?.Invoke(order);
+            if (wasRemoved) OrderRemoved?.Invoke(order);
+            if (order.Status == OrderStatus.Executed) OrderExecuted?.Invoke(order);
+        }
+
+        private void OnTradeUpdate(string line)
+        {
+            var trade = MessageParser.ParseTrade(line);
+            if (trade == null) return;
+
+            lock (_lock)
             {
-                OrderAdded?.Invoke(order);
-            }
-            if (wasRemoved)
-            {
-                OrderRemoved?.Invoke(order);
-            }
-            if (order.Status == OrderStatus.Executed)
-            {
-                OrderExecuted?.Invoke(order);
+                if (trade.Side == OrderSide.Sell)
+                {
+                    // 卖出：先更新 Equity
+                    double avgCost = 0;
+                    if (_positionInfos.TryGetValue(trade.Symbol, out var info))
+                    {
+                        avgCost = info.LastAvgCost;
+                    }
+
+                    if (avgCost > 0)
+                    {
+                        double realizedPL = (trade.Price - avgCost) * trade.Quantity;
+                        _equity += realizedPL;
+                    }
+                }
+
+                RecalculateBuyingPower();
+                UpdateAccountInfo();
             }
         }
 
@@ -121,21 +173,42 @@ namespace TradingEngine.Managers
             var info = MessageParser.ParseAccountInfo(line);
             if (info == null) return;
 
-            // 保留BP信息
-            info.BuyingPower = AccountInfo.BuyingPower;
-            info.OvernightBP = AccountInfo.OvernightBP;
-
-            AccountInfo = info;
-            AccountInfoChanged?.Invoke(info);
+            lock (_lock)
+            {
+                if (_equity == 0 && info.CurrentEquity > 0)
+                {
+                    _equity = info.CurrentEquity;
+                    RecalculateBuyingPower();
+                }
+                UpdateAccountInfo();
+            }
         }
 
-        private void OnBPUpdate(string line)
-        {
-            var bp = MessageParser.ParseBuyingPower(line);
-            if (bp == null) return;
+        #endregion
 
-            AccountInfo.BuyingPower = bp.Value.bp;
-            AccountInfo.OvernightBP = bp.Value.overnightBp;
+        #region BP Calculation
+
+        private void RecalculateBuyingPower()
+        {
+            double leverage = AppConfig.Instance.Trading.Leverage;
+
+            // 计算所有持仓的成本
+            double totalPositionCost = 0;
+            foreach (var info in _positionInfos.Values)
+            {
+                if (info.Position != null && info.Position.Quantity > 0)
+                {
+                    totalPositionCost += info.Position.Quantity * info.Position.AvgCost;
+                }
+            }
+
+            _buyingPower = _equity * leverage - totalPositionCost;
+        }
+
+        private void UpdateAccountInfo()
+        {
+            AccountInfo.CurrentEquity = _equity;
+            AccountInfo.BuyingPower = _buyingPower;
             AccountInfo.UpdateTime = DateTime.Now;
             AccountInfoChanged?.Invoke(AccountInfo);
         }
@@ -148,18 +221,18 @@ namespace TradingEngine.Managers
         {
             lock (_lock)
             {
-                return _positions.TryGetValue(symbol, out var pos) ? pos : null;
+                return _positionInfos.TryGetValue(symbol, out var info) ? info.Position : null;
             }
         }
 
-        /// <summary>
-        /// 获取所有持仓（都是 Quantity != 0 的）
-        /// </summary>
         public List<Position> GetAllPositions()
         {
             lock (_lock)
             {
-                return _positions.Values.ToList();
+                return _positionInfos.Values
+                    .Where(info => info.Position != null && info.Position.Quantity != 0)
+                    .Select(info => info.Position!)
+                    .ToList();
             }
         }
 
@@ -171,9 +244,6 @@ namespace TradingEngine.Managers
             }
         }
 
-        /// <summary>
-        /// 获取所有挂单（都是 Accepted 状态的）
-        /// </summary>
         public List<Order> GetAllOrders()
         {
             lock (_lock)
@@ -182,9 +252,6 @@ namespace TradingEngine.Managers
             }
         }
 
-        /// <summary>
-        /// 查找指定 symbol 的止损单
-        /// </summary>
         public Order? GetStopOrder(string symbol)
         {
             lock (_lock)
@@ -200,9 +267,18 @@ namespace TradingEngine.Managers
         public async Task RefreshAll()
         {
             await _client.GetAccountInfo();
-            await _client.GetBuyingPower();
             await _client.GetPositions();
             await _client.GetOrders();
+        }
+
+        public void SetEquity(double equity)
+        {
+            lock (_lock)
+            {
+                _equity = equity;
+                RecalculateBuyingPower();
+                UpdateAccountInfo();
+            }
         }
 
         #endregion

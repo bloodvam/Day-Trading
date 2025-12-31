@@ -6,7 +6,7 @@ namespace TradingEngine.UI
     public class PositionsPanel : BasePanel
     {
         private ListBox _lstPositions;
-        private double _currentBid;
+        private string? _activeSymbol;
 
         public PositionsPanel(TradingController controller) : base(controller)
         {
@@ -29,8 +29,11 @@ namespace TradingEngine.UI
             {
                 Location = new Point(5, 25),
                 Size = new Size(420, 100),
-                Font = new Font("Consolas", 9)
+                Font = new Font("Consolas", 9),
+                DrawMode = DrawMode.OwnerDrawFixed,
+                ItemHeight = 16
             };
+            _lstPositions.DrawItem += LstPositions_DrawItem;
 
             this.Controls.Add(lblTitle);
             this.Controls.Add(_lstPositions);
@@ -38,35 +41,80 @@ namespace TradingEngine.UI
 
         private void BindEvents()
         {
-            // 监听 Position 变化（添加/更新/移除都会触发）
             Controller.PositionChanged += (pos) => InvokeUI(() => RefreshPositions());
             Controller.LoginSuccess += () => InvokeUI(() => RefreshPositions());
 
-            // 监听 Quote 更新，实时计算盈亏
-            Controller.QuoteUpdated += (quote) => InvokeUI(() =>
+            // 监听所有 Quote 更新（用于计算盈亏）
+            Controller.AnyQuoteUpdated += (quote) => InvokeUI(() => RefreshPositions());
+
+            // 监听 ActiveSymbol 变化
+            Controller.ActiveSymbolChanged += (symbol) => InvokeUI(() =>
             {
-                _currentBid = quote.Bid;
+                _activeSymbol = symbol;
                 RefreshPositions();
             });
+        }
+
+        private void LstPositions_DrawItem(object? sender, DrawItemEventArgs e)
+        {
+            if (e.Index < 0) return;
+
+            e.DrawBackground();
+
+            var item = _lstPositions.Items[e.Index] as PositionItem;
+            if (item == null) return;
+
+            // 判断是否是当前选中的 symbol
+            bool isActive = item.Symbol == _activeSymbol;
+
+            // 背景色
+            Color backColor = isActive ? Color.LightSkyBlue : e.BackColor;
+            using (var brush = new SolidBrush(backColor))
+            {
+                e.Graphics.FillRectangle(brush, e.Bounds);
+            }
+
+            // 文字
+            using (var brush = new SolidBrush(e.ForeColor))
+            {
+                e.Graphics.DrawString(item.DisplayText, e.Font!, brush, e.Bounds);
+            }
+
+            e.DrawFocusRectangle();
         }
 
         private void RefreshPositions()
         {
             _lstPositions.Items.Clear();
 
-            // GetAllPositions 已经只返回 Quantity != 0 的
             foreach (var pos in Controller.GetAllPositions())
             {
-                // 用 Bid 计算未实现盈亏
+                // 从 Controller 获取该 symbol 的 quote
+                var quote = Controller.GetQuote(pos.Symbol);
+                double bid = quote?.Bid ?? 0;
+
                 double unrealizedPL = 0;
-                if (_currentBid > 0 && pos.Quantity != 0)
+                if (bid > 0 && pos.Quantity != 0)
                 {
-                    unrealizedPL = (_currentBid - pos.AvgCost) * pos.Quantity;
+                    unrealizedPL = (bid - pos.AvgCost) * pos.Quantity;
                 }
 
                 string plSign = unrealizedPL >= 0 ? "+" : "";
-                _lstPositions.Items.Add($"{pos.Symbol}: {pos.Quantity}@{pos.AvgCost:F2} | Unrealized:{plSign}{unrealizedPL:F2} | Realized:{pos.RealizedPL:F2}");
+                string displayText = $"{pos.Symbol}: {pos.Quantity}@{pos.AvgCost:F2} | Unrealized:{plSign}{unrealizedPL:F2} | Realized:{pos.RealizedPL:F2}";
+
+                _lstPositions.Items.Add(new PositionItem
+                {
+                    Symbol = pos.Symbol,
+                    DisplayText = displayText
+                });
             }
+        }
+
+        private class PositionItem
+        {
+            public string Symbol { get; set; } = "";
+            public string DisplayText { get; set; } = "";
+            public override string ToString() => DisplayText;
         }
     }
 }

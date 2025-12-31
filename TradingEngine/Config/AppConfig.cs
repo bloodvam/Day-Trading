@@ -15,6 +15,7 @@ namespace TradingEngine.Config
     {
         public double RiskAmount { get; set; } = 10.0;
         public double SpreadPercent { get; set; } = 0.03;
+        public double Leverage { get; set; } = 6.0;
         public string BuyRoute { get; set; } = "VLCTL";
         public string SellRoute { get; set; } = "VLCTL";
         public string StopRoute { get; set; } = "STOP";
