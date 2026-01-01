@@ -35,14 +35,16 @@ namespace TradingEngine.UI
 
         private void UpdateAccount(AccountInfo info)
         {
+            string account = TradingEngine.Config.AppConfig.Instance.DasApi.Account;
+            double leverage = TradingEngine.Config.AppConfig.Instance.Trading.Leverage;
+
             if (info.CurrentEquity > 0)
             {
-                double leverage = TradingEngine.Config.AppConfig.Instance.Trading.Leverage;
-                _lblAccount.Text = $"Account: Equity:{info.CurrentEquity:N2}  BP:{info.BuyingPower:N2}  (Leverage:{leverage}x)";
+                _lblAccount.Text = $"Account: {account}  Equity:{info.CurrentEquity:N2}  BP:{info.BuyingPower:N2}  (Leverage:{leverage}x)";
             }
             else
             {
-                _lblAccount.Text = "Account: (waiting for data...)";
+                _lblAccount.Text = $"Account: {account}  (waiting for data...)";
             }
         }
     }

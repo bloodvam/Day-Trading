@@ -79,12 +79,9 @@ namespace TradingEngine.Managers
                 else
                 {
                     info.Position = null;
-                    // 不清空 LastAvgCost，用于计算最后一笔卖出的 PL
                 }
 
-                // 重新计算 BP
-                RecalculateBuyingPower();
-                UpdateAccountInfo();
+                // BP 由 %TRADE 事件更新，这里不再调用 RecalculateBuyingPower
             }
 
             // 如果订阅了，同步更新 SymbolState（用于 UI 高亮等）
@@ -147,23 +144,26 @@ namespace TradingEngine.Managers
 
             lock (_lock)
             {
-                if (trade.Side == OrderSide.Sell)
-                {
-                    // 卖出：先更新 Equity
-                    double avgCost = 0;
-                    if (_positionInfos.TryGetValue(trade.Symbol, out var info))
-                    {
-                        avgCost = info.LastAvgCost;
-                    }
+                double leverage = AppConfig.Instance.Trading.Leverage;
+                double previousEquity = _equity;
+                double previousBP = _buyingPower;
 
-                    if (avgCost > 0)
-                    {
-                        double realizedPL = (trade.Price - avgCost) * trade.Quantity;
-                        _equity += realizedPL;
-                    }
+                if (trade.Side == OrderSide.Buy)
+                {
+                    // 买入：Equity 不变，BP 减少 price * qty
+                    _buyingPower = previousBP - trade.Price * trade.Quantity;
+                }
+                else if (trade.Side == OrderSide.Sell)
+                {
+                    // 卖出：Equity 加上 PL
+                    _equity = previousEquity + trade.PL;
+
+                    // BP = current_equity * leverage - (previous_equity * leverage - previous_bp - price * qty)
+                    double previousPositionCost = previousEquity * leverage - previousBP;
+                    double currentPositionCost = previousPositionCost - trade.Price * trade.Quantity;
+                    _buyingPower = _equity * leverage - currentPositionCost;
                 }
 
-                RecalculateBuyingPower();
                 UpdateAccountInfo();
             }
         }
