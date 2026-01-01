@@ -6,7 +6,7 @@ namespace TradingEngine.Managers
     /// <summary>
     /// 管理行情订阅
     /// </summary>
-    public class SubscriptionManager
+    public class SubscriptionManager : IDisposable
     {
         private readonly DasClient _client;
         private readonly SymbolDataManager _dataManager;
@@ -128,6 +128,12 @@ namespace TradingEngine.Managers
         public Quote? GetQuote(string symbol)
         {
             return _dataManager.Get(symbol)?.Quote;
+        }
+
+        public void Dispose()
+        {
+            _client.QuoteReceived -= OnQuoteReceived;
+            _client.TsReceived -= OnTsReceived;
         }
     }
 }

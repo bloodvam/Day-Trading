@@ -10,7 +10,7 @@
 
         public string Symbol { get; }
         public int IntervalSeconds { get; }
-        public int MaxBars { get; set; } = 500;
+        public int MaxBars { get; set; } = 4000;
 
         /// <summary>
         /// 当前正在形成的Bar（未完成）

@@ -405,6 +405,8 @@ namespace TradingEngine.Core
             _hotkeyManager?.Dispose();
             _orderManager.Dispose();
             _barAggregator.Dispose();
+            _subscriptionManager.Dispose();
+            _accountManager.Dispose();
             _client.Dispose();
         }
     }

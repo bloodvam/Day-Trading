@@ -8,6 +8,7 @@ namespace TradingEngine.Managers
         private TcpClient? _client;
         private NetworkStream? _stream;
         private readonly CancellationTokenSource _cts = new();
+        private readonly SemaphoreSlim _sendLock = new(1, 1);
 
         private readonly byte[] _buffer = new byte[8192];
         private readonly StringBuilder _lineBuffer = new();
@@ -72,14 +73,13 @@ namespace TradingEngine.Managers
 
         public async Task LoginAsync()
         {
-            
+
             var config = AppConfig.Instance.DasApi;
             await LoginAsync(config.User, config.Password, config.Account);
         }
 
         public async Task LoginAsync(string user, string password, string account)
         {
-            Console.WriteLine("here");
             await SendAsync($"LOGIN {user} {password} {account}");
         }
 
@@ -99,6 +99,7 @@ namespace TradingEngine.Managers
         public void Dispose()
         {
             Disconnect();
+            _sendLock.Dispose();
             _cts.Dispose();
         }
 
@@ -149,7 +150,7 @@ namespace TradingEngine.Managers
         private void DispatchLine(string line)
         {
             RawMessage?.Invoke(line);
-      
+
             // 登录成功检测
             if (line.StartsWith("#OrderServer:Logon:Successful"))
             {
@@ -211,18 +212,28 @@ namespace TradingEngine.Managers
         {
             if (_stream == null) return;
 
-            // 记录发送的命令（密码脱敏）
-            string logCmd = cmd.StartsWith("LOGIN")
-                ? "LOGIN *** *** ***"
-                : cmd.TrimEnd('\r', '\n');
-            CommandSent?.Invoke($"[SEND] {logCmd}");
+            await _sendLock.WaitAsync();
+            try
+            {
+                if (_stream == null) return;
 
-            if (!cmd.EndsWith("\r\n"))
-                cmd += "\r\n";
+                // 记录发送的命令（密码脱敏）
+                string logCmd = cmd.StartsWith("LOGIN")
+                    ? "LOGIN *** *** ***"
+                    : cmd.TrimEnd('\r', '\n');
+                CommandSent?.Invoke($"[SEND] {logCmd}");
 
-            byte[] data = Encoding.ASCII.GetBytes(cmd);
-            await _stream.WriteAsync(data, 0, data.Length);
-            await _stream.FlushAsync();
+                if (!cmd.EndsWith("\r\n"))
+                    cmd += "\r\n";
+
+                byte[] data = Encoding.ASCII.GetBytes(cmd);
+                await _stream.WriteAsync(data, 0, data.Length);
+                await _stream.FlushAsync();
+            }
+            finally
+            {
+                _sendLock.Release();
+            }
         }
 
         #endregion

@@ -17,7 +17,7 @@ namespace TradingEngine.Managers
         public double LastAvgCost { get; set; }  // 即使 Position 清零也保留，用于计算卖出 PL
     }
 
-    public class AccountManager
+    public class AccountManager : IDisposable
     {
         private readonly DasClient _client;
         private readonly SymbolDataManager _dataManager;
@@ -282,5 +282,13 @@ namespace TradingEngine.Managers
         }
 
         #endregion
+
+        public void Dispose()
+        {
+            _client.PosUpdate -= OnPosUpdate;
+            _client.OrderUpdate -= OnOrderUpdate;
+            _client.AccountInfoUpdate -= OnAccountInfoUpdate;
+            _client.TradeUpdate -= OnTradeUpdate;
+        }
     }
 }

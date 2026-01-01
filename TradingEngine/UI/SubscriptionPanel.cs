@@ -55,11 +55,18 @@ namespace TradingEngine.UI
 
         private async void BtnSubscribe_Click(object? sender, EventArgs e)
         {
-            string symbol = _txtSymbol.Text.Trim();
-            if (string.IsNullOrEmpty(symbol)) return;
+            try
+            {
+                string symbol = _txtSymbol.Text.Trim();
+                if (string.IsNullOrEmpty(symbol)) return;
 
-            await Controller.SubscribeAsync(symbol);
-            _txtSymbol.Clear();
+                await Controller.SubscribeAsync(symbol);
+                _txtSymbol.Clear();
+            }
+            catch (Exception ex)
+            {
+                Controller.LogMessage($"Subscribe error: {ex.Message}");
+            }
         }
     }
 }

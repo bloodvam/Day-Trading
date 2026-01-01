@@ -114,6 +114,22 @@ namespace TradingEngine.Managers
         {
             try
             {
+                // 买入单被取消/拒绝时，清理 _pendingStops
+                if (order.Side == OrderSide.Buy &&
+                    (order.Status == OrderStatus.Canceled || order.Status == OrderStatus.Rejected))
+                {
+                    lock (_lock)
+                    {
+                        if (_pendingStops.ContainsKey(order.Token))
+                        {
+                            _pendingStops.Remove(order.Token);
+                            Log?.Invoke($"Buy order {order.OrderId} {order.Status}, removed pending stop (Token={order.Token})");
+                        }
+                    }
+                    return;
+                }
+
+                // 以下是止损单处理逻辑
                 if (order.Status != OrderStatus.Canceled) return;
                 if (order.Type != OrderType.StopLimit &&
                     order.Type != OrderType.StopLimitPost &&
