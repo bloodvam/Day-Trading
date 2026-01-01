@@ -98,10 +98,17 @@ namespace TradingEngine.Core
             // Connection events
             _client.Connected += () => Connected?.Invoke();
             _client.Disconnected += () => Disconnected?.Invoke();
-            _client.LoginSuccess += () =>
+            _client.LoginSuccess += async () =>
             {
                 LoginSuccess?.Invoke();
-                _ = _accountManager.RefreshAll();
+                try
+                {
+                    await _accountManager.RefreshAll();
+                }
+                catch (Exception ex)
+                {
+                    Log?.Invoke($"RefreshAll error: {ex.Message}");
+                }
             };
             _client.LoginFailed += (msg) => LoginFailed?.Invoke(msg);
 

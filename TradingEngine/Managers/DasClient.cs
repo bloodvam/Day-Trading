@@ -152,12 +152,12 @@ namespace TradingEngine.Managers
             RawMessage?.Invoke(line);
 
             // 登录成功检测
-            if (line.StartsWith("#OrderServer:Logon:Successful"))
+            if (line.StartsWith("#OrderServer:Logon:Successful") || line.StartsWith("#LOGIN SUCCESSED"))
             {
                 IsLoggedIn = true;
                 LoginSuccess?.Invoke();
             }
-            else if (line.StartsWith("#OrderServer:Logon:Failed"))
+            else if (line.StartsWith("#OrderServer:Logon:Failed") || line.StartsWith("#LOGIN FAILED"))
             {
                 LoginFailed?.Invoke(line);
             }
