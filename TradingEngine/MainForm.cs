@@ -73,7 +73,7 @@ namespace TradingEngine
             var topContainer = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = 260
+                Height = 395  // 260 + 135
             };
 
             _connectionPanel.Dock = DockStyle.Top;
@@ -81,13 +81,6 @@ namespace TradingEngine
             _symbolBar.Dock = DockStyle.Top;
             _quotePanel.Dock = DockStyle.Top;
             _accountPanel.Dock = DockStyle.Top;
-
-            // 注意添加顺序（后添加的在上面）
-            topContainer.Controls.Add(_accountPanel);
-            topContainer.Controls.Add(_quotePanel);
-            topContainer.Controls.Add(_symbolBar);
-            topContainer.Controls.Add(_subscriptionPanel);
-            topContainer.Controls.Add(_connectionPanel);
 
             // 中间区域 - Positions 和 Orders 并排
             var middleContainer = new Panel
@@ -105,12 +98,19 @@ namespace TradingEngine
             middleContainer.Controls.Add(_positionsPanel);
             middleContainer.Controls.Add(_ordersPanel);
 
+            // 注意添加顺序（后添加的在上面）
+            topContainer.Controls.Add(_quotePanel);
+            topContainer.Controls.Add(_symbolBar);
+            topContainer.Controls.Add(middleContainer);
+            topContainer.Controls.Add(_accountPanel);
+            topContainer.Controls.Add(_subscriptionPanel);
+            topContainer.Controls.Add(_connectionPanel);
+
             // 底部区域 - Log 填充剩余空间
             _logPanel.Dock = DockStyle.Fill;
 
-            // 添加到窗体（顺序：先Fill，再Top）
+            // 添加到窗体
             this.Controls.Add(_logPanel);
-            this.Controls.Add(middleContainer);
             this.Controls.Add(topContainer);
         }
 
