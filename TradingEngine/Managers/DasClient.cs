@@ -1,4 +1,5 @@
-﻿using System.Net.Sockets;
+﻿using System.Diagnostics;
+using System.Net.Sockets;
 using System.Text;
 using TradingEngine.Config;
 namespace TradingEngine.Managers
@@ -150,6 +151,7 @@ namespace TradingEngine.Managers
         private void DispatchLine(string line)
         {
             RawMessage?.Invoke(line);
+            Debug.WriteLine(line);
 
             // 登录成功检测
             if (line.StartsWith("#OrderServer:Logon:Successful") || line.StartsWith("#LOGIN SUCCESSED"))

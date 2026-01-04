@@ -117,7 +117,9 @@ namespace TradingEngine.Managers
         /// </summary>
         public void ProcessTick(Tick tick)
         {
-            if (!tick.IsValidForLastPrice) return;
+            // FADF 交易所的数据，只有 IsValidForLastPrice 才算入
+            // 其他交易所的数据全部算入
+            if (tick.Exchange == "FADF" && !tick.IsValidForLastPrice) return;
 
             lock (_lock)
             {
@@ -158,6 +160,12 @@ namespace TradingEngine.Managers
                 BarCompleted?.Invoke(currentBar.Clone());
 
                 // 创建新Bar
+                currentBar = CreateNewBar(symbol, barTime, tick, intervalSeconds);
+                currentBars[intervalSeconds] = currentBar;
+            }
+            else if (barTime < currentBar.Time)
+            {
+                // 时间回退（回放跳跃），丢弃当前 bar，创建新 bar
                 currentBar = CreateNewBar(symbol, barTime, tick, intervalSeconds);
                 currentBars[intervalSeconds] = currentBar;
             }

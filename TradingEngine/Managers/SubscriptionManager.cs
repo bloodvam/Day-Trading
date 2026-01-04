@@ -1,5 +1,5 @@
 ﻿using TradingEngine.Models;
-using TradingEngine.Parsers;
+using TradingEngine.Utils;
 
 namespace TradingEngine.Managers
 {

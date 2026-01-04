@@ -1,7 +1,7 @@
 ﻿using System.Globalization;
 using TradingEngine.Models;
 
-namespace TradingEngine.Parsers
+namespace TradingEngine.Utils
 {
     public static class MessageParser
     {

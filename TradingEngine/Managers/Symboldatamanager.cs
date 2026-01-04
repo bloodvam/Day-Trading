@@ -70,6 +70,26 @@ namespace TradingEngine.Managers
         public PendingSellInfo? PendingSell { get; set; }
         public bool PendingMoveStop { get; set; }
 
+        // 技术指标（由 IndicatorManager 更新）
+        public double ATR14 { get; set; }
+        public double EMA20 { get; set; }
+
+        // VWAP 计算
+        public bool VwapEnabled { get; set; }
+        public double CumulativeValue { get; set; }   // 累计成交额
+        public long CumulativeVolume { get; set; }    // 累计成交量
+        public double VWAP { get; set; }
+
+        // Session High
+        public double SessionHigh { get; set; }
+
+        // 策略状态
+        public double TriggerPrice { get; set; }
+        public double StopPrice { get; set; }
+        public bool StrategyEnabled { get; set; }
+        public bool HasTriggeredBuy { get; set; }
+        public bool HasTriggeredSell { get; set; }
+
         // 日志
         public List<LogEntry> Logs { get; } = new();
 
@@ -178,6 +198,7 @@ namespace TradingEngine.Managers
                 if (!_symbols.TryGetValue(symbol, out var state))
                 {
                     state = new SymbolState(symbol);
+                    state.VwapEnabled = true;  // 自动启用 VWAP 计算
                     _symbols[symbol] = state;
                     SymbolAdded?.Invoke(symbol);
                 }

@@ -15,6 +15,8 @@ namespace TradingEngine.Core
         private readonly AccountManager _accountManager;
         private readonly SubscriptionManager _subscriptionManager;
         private readonly OrderManager _orderManager;
+        private readonly IndicatorManager _indicatorManager;
+        private readonly StrategyManager _strategyManager;
 
         private HotkeyManager? _hotkeyManager;
 
@@ -46,6 +48,9 @@ namespace TradingEngine.Core
         public event Action<Quote>? AnyQuoteUpdated;
         public event Action<Bar>? BarUpdated;
         public event Action<Bar>? BarCompleted;
+        public event Action<string, double, double>? IndicatorsUpdated;  // symbol, atr14, ema20
+        public event Action<string, double>? VwapUpdated;                // symbol, vwap
+        public event Action<string, double>? SessionHighUpdated;         // symbol, sessionHigh
 
         #endregion
 
@@ -89,6 +94,8 @@ namespace TradingEngine.Core
             _accountManager = new AccountManager(_client, _dataManager);
             _subscriptionManager = new SubscriptionManager(_client, _dataManager, _barAggregator);
             _orderManager = new OrderManager(_client, _accountManager, _dataManager, _barAggregator);
+            _indicatorManager = new IndicatorManager(_client, _barAggregator, _dataManager);
+            _strategyManager = new StrategyManager(_client, _dataManager, _barAggregator, _orderManager, _accountManager);
 
             SubscribeInternalEvents();
         }
@@ -131,6 +138,29 @@ namespace TradingEngine.Core
             };
             _barAggregator.BarCompleted += (b) => BarCompleted?.Invoke(b);
 
+            // Indicator events - 只触发 ActiveSymbol 的
+            _indicatorManager.IndicatorsUpdated += (symbol, atr, ema) =>
+            {
+                if (symbol == _dataManager.ActiveSymbol)
+                {
+                    IndicatorsUpdated?.Invoke(symbol, atr, ema);
+                }
+            };
+            _indicatorManager.VwapUpdated += (symbol, vwap) =>
+            {
+                if (symbol == _dataManager.ActiveSymbol)
+                {
+                    VwapUpdated?.Invoke(symbol, vwap);
+                }
+            };
+            _indicatorManager.SessionHighUpdated += (symbol, high) =>
+            {
+                if (symbol == _dataManager.ActiveSymbol)
+                {
+                    SessionHighUpdated?.Invoke(symbol, high);
+                }
+            };
+
             // Account events
             _accountManager.AccountInfoChanged += (a) => AccountInfoChanged?.Invoke(a);
             _accountManager.PositionChanged += (p) => PositionChanged?.Invoke(p);
@@ -139,6 +169,7 @@ namespace TradingEngine.Core
 
             // Logging
             _orderManager.Log += (msg) => Log?.Invoke(msg);
+            _strategyManager.Log += (msg) => Log?.Invoke(msg);
             _client.RawMessage += (msg) => RawMessage?.Invoke(msg);
             _client.CommandSent += (msg) => CommandSent?.Invoke(msg);
 
@@ -351,6 +382,28 @@ namespace TradingEngine.Core
             return _dataManager.Get(symbol)?.Quote;
         }
 
+        public void ResetVwap(string symbol, double? initialVwap = null)
+        {
+            _indicatorManager.ResetVwap(symbol, initialVwap);
+            Log?.Invoke($"VWAP reset for {symbol}" + (initialVwap.HasValue ? $": Initial={initialVwap:F3}" : ""));
+        }
+
+        public void ResetSessionHigh(string symbol, double? initialValue = null)
+        {
+            _indicatorManager.ResetSessionHigh(symbol, initialValue);
+            Log?.Invoke($"Session High reset for {symbol}" + (initialValue.HasValue ? $": Initial={initialValue:F3}" : ""));
+        }
+
+        public void StartStrategy(string symbol, double triggerPrice)
+        {
+            _strategyManager.StartStrategy(symbol, triggerPrice);
+        }
+
+        public void StopStrategy(string symbol)
+        {
+            _strategyManager.StopStrategy(symbol);
+        }
+
         public Bar? GetCurrentBar()
         {
             var symbol = _dataManager.ActiveSymbol;
@@ -410,6 +463,8 @@ namespace TradingEngine.Core
         public void Dispose()
         {
             _hotkeyManager?.Dispose();
+            _strategyManager.Dispose();
+            _indicatorManager.Dispose();
             _orderManager.Dispose();
             _barAggregator.Dispose();
             _subscriptionManager.Dispose();

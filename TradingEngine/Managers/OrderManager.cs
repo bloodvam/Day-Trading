@@ -1,6 +1,6 @@
 ﻿using TradingEngine.Config;
 using TradingEngine.Models;
-using TradingEngine.Parsers;
+using TradingEngine.Utils;
 
 namespace TradingEngine.Managers
 {
@@ -99,7 +99,8 @@ namespace TradingEngine.Managers
 
                 Log?.Invoke($"Buy order {order.OrderId} executed, placing stop for {totalShares} shares at {pendingStop.stopPrice:F2}");
 
-                await PlaceStopOrder(order.Symbol, totalShares, pendingStop.stopPrice);
+                // TODO: 策略测试期间暂时不挂止损，由策略控制卖出
+                // await PlaceStopOrder(order.Symbol, totalShares, pendingStop.stopPrice);
             }
             catch (Exception ex)
             {
@@ -366,7 +367,7 @@ namespace TradingEngine.Managers
             }
 
             string barInfo = usedLastBar ? "LastBar" : "CurrentBar";
-            Log?.Invoke($"BUY {symbol} {shares}@{limitPrice:F2} (Ask={askPrice:F2}, Stop={stopPrice:F2} [{barInfo}], Token={token})");
+            //Log?.Invoke($"BUY {symbol} {shares}@{limitPrice:F2} (Ask={askPrice:F2}, Stop={stopPrice:F2} [{barInfo}], Token={token})");
 
             NewOrderSent?.Invoke(token);
             await _client.PlaceLimitOrder(

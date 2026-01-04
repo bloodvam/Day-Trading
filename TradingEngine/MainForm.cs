@@ -15,6 +15,7 @@ namespace TradingEngine
         private AccountPanel _accountPanel = null!;
         private PositionsPanel _positionsPanel = null!;
         private OrdersPanel _ordersPanel = null!;
+        private WorkingZonePanel _workingZonePanel = null!;
         private LogPanel _logPanel = null!;
 
         public MainForm()
@@ -64,6 +65,7 @@ namespace TradingEngine
             _accountPanel = new AccountPanel(_controller);
             _positionsPanel = new PositionsPanel(_controller);
             _ordersPanel = new OrdersPanel(_controller);
+            _workingZonePanel = new WorkingZonePanel(_controller);
             _logPanel = new LogPanel(_controller);
         }
 
@@ -73,7 +75,7 @@ namespace TradingEngine
             var topContainer = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = 395  // 260 + 135
+                Height = 595  // 395 + 200 (WorkingZonePanel)
             };
 
             _connectionPanel.Dock = DockStyle.Top;
@@ -99,6 +101,7 @@ namespace TradingEngine
             middleContainer.Controls.Add(_ordersPanel);
 
             // 注意添加顺序（后添加的在上面）
+            topContainer.Controls.Add(_workingZonePanel);
             topContainer.Controls.Add(_quotePanel);
             topContainer.Controls.Add(_symbolBar);
             topContainer.Controls.Add(middleContainer);
