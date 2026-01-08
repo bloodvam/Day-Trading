@@ -34,6 +34,32 @@ namespace TradingEngine.UI
             };
             _lstOrders.DrawItem += LstOrders_DrawItem;
 
+            // 右键菜单
+            var contextMenu = new ContextMenuStrip();
+            var cancelItem = new ToolStripMenuItem("Cancel Order");
+            cancelItem.Click += async (s, e) =>
+            {
+                if (_lstOrders.SelectedItem is OrderItem item)
+                {
+                    await Controller.CancelOrder(item.OrderId);
+                }
+            };
+            contextMenu.Items.Add(cancelItem);
+            _lstOrders.ContextMenuStrip = contextMenu;
+
+            // 右键选中
+            _lstOrders.MouseDown += (s, e) =>
+            {
+                if (e.Button == MouseButtons.Right)
+                {
+                    int index = _lstOrders.IndexFromPoint(e.Location);
+                    if (index >= 0)
+                    {
+                        _lstOrders.SelectedIndex = index;
+                    }
+                }
+            };
+
             this.Controls.Add(lblTitle);
             this.Controls.Add(_lstOrders);
         }
@@ -103,6 +129,7 @@ namespace TradingEngine.UI
 
                 _lstOrders.Items.Add(new OrderItem
                 {
+                    OrderId = order.OrderId,
                     Symbol = order.Symbol,
                     DisplayText = displayText
                 });
@@ -111,6 +138,7 @@ namespace TradingEngine.UI
 
         private class OrderItem
         {
+            public int OrderId { get; set; }
             public string Symbol { get; set; } = "";
             public string DisplayText { get; set; } = "";
             public override string ToString() => DisplayText;

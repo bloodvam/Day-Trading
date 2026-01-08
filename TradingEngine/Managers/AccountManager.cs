@@ -30,6 +30,7 @@ namespace TradingEngine.Managers
         // 自己维护的 Equity 和 BP
         private double _equity;
         private double _buyingPower;
+        private bool _equityInitialized;  // 是否已从 $AccountInfo 初始化
 
         public AccountInfo AccountInfo { get; private set; } = new();
 
@@ -144,6 +145,9 @@ namespace TradingEngine.Managers
 
             lock (_lock)
             {
+                // 只有初始化后才处理
+                if (!_equityInitialized) return;
+
                 double leverage = AppConfig.Instance.Trading.Leverage;
                 double previousEquity = _equity;
                 double previousBP = _buyingPower;
@@ -175,9 +179,10 @@ namespace TradingEngine.Managers
 
             lock (_lock)
             {
-                if (_equity == 0 && info.CurrentEquity > 0)
+                if (!_equityInitialized && info.CurrentEquity > 0)
                 {
                     _equity = info.CurrentEquity;
+                    _equityInitialized = true;
                     RecalculateBuyingPower();
                 }
                 UpdateAccountInfo();
@@ -276,6 +281,7 @@ namespace TradingEngine.Managers
             lock (_lock)
             {
                 _equity = equity;
+                _equityInitialized = true;
                 RecalculateBuyingPower();
                 UpdateAccountInfo();
             }

@@ -53,6 +53,27 @@ namespace TradingEngine.Managers
     }
 
     /// <summary>
+    /// 日志面板类型
+    /// </summary>
+    public enum LogPanelType
+    {
+        Order,
+        Strategy,
+        Agent
+    }
+
+    /// <summary>
+    /// 加仓模式
+    /// </summary>
+    public enum AddPositionMode
+    {
+        None,       // 无
+        Open,       // 开仓
+        AddAll,     // 加仓 All Profit
+        AddHalf     // 加仓 1/2 Profit
+    }
+
+    /// <summary>
     /// 每个 Symbol 的完整状态
     /// </summary>
     public class SymbolState
@@ -73,12 +94,14 @@ namespace TradingEngine.Managers
         // 技术指标（由 IndicatorManager 更新）
         public double ATR14 { get; set; }
         public double EMA20 { get; set; }
+        public bool IsAboveEMA20 { get; set; }  // 当前价格是否在 EMA20 上方
 
         // VWAP 计算
         public bool VwapEnabled { get; set; }
         public double CumulativeValue { get; set; }   // 累计成交额
         public long CumulativeVolume { get; set; }    // 累计成交量
         public double VWAP { get; set; }
+        public bool IsAboveVWAP { get; set; }         // 当前价格是否在 VWAP 上方
 
         // Session High
         public double SessionHigh { get; set; }
@@ -89,9 +112,30 @@ namespace TradingEngine.Managers
         public bool StrategyEnabled { get; set; }
         public bool HasTriggeredBuy { get; set; }
         public bool HasTriggeredSell { get; set; }
+        public AddPositionMode PositionMode { get; set; }  // 当前等待触发的模式
 
-        // 日志
-        public List<LogEntry> Logs { get; } = new();
+        // Trailing Stop 状态
+        public double TrailingSinceHigh { get; set; }      // 买入后最高价
+        public double TrailHalf { get; set; }              // 第二大波动 (High - Low)
+        public double TrailAll { get; set; }               // TrailHalf × 1.25
+        public List<double> BarRanges { get; } = new();    // 买入后各 bar 的波动幅度
+        public bool HasTriggeredTrailHalf { get; set; }    // 是否已触发 Trail½ 卖出
+        public int RemainingShares { get; set; }           // SellHalf 后剩余股数（供 SellAll 使用）
+        public DateTime LastBarTime { get; set; }          // 最后添加的 bar 时间，避免重复
+        public bool TrailingStopActive { get; set; }       // Trailing Stop 是否已激活
+
+        // Agent Mode 状态
+        public bool AgentEnabled { get; set; }
+        public double AgentTriggerPrice { get; set; }      // Agent 计算的买入价格
+        public double AgentPreviousPrice { get; set; }     // 上一笔 tick 价格
+        public double AgentBreakedLevel { get; set; }      // 已突破的关键位
+        public double AgentCurrentBarHigh { get; set; }    // 当前 bar 最高价
+        public double AgentLastTriggeredPrice { get; set; } // 上次触发 StartOpen 的价格
+
+        // 分类日志
+        public List<LogEntry> OrderLogs { get; } = new();
+        public List<LogEntry> StrategyLogs { get; } = new();
+        public List<LogEntry> AgentLogs { get; } = new();
 
         public SymbolState(string symbol)
         {
@@ -100,24 +144,96 @@ namespace TradingEngine.Managers
         }
 
         /// <summary>
-        /// 清空日志
+        /// 清空所有日志
         /// </summary>
         public void ClearLogs()
         {
-            Logs.Clear();
+            OrderLogs.Clear();
+            StrategyLogs.Clear();
+            AgentLogs.Clear();
+        }
+
+        /// <summary>
+        /// 清空指定类型的日志
+        /// </summary>
+        public void ClearLogs(LogPanelType type)
+        {
+            switch (type)
+            {
+                case LogPanelType.Order:
+                    OrderLogs.Clear();
+                    break;
+                case LogPanelType.Strategy:
+                    StrategyLogs.Clear();
+                    break;
+                case LogPanelType.Agent:
+                    AgentLogs.Clear();
+                    break;
+            }
         }
 
         /// <summary>
         /// 添加日志
         /// </summary>
-        public void AddLog(string message, int colorArgb)
+        public void AddLog(LogPanelType type, string message, int colorArgb)
         {
-            Logs.Add(new LogEntry
+            var entry = new LogEntry
             {
                 Message = message,
                 ColorArgb = colorArgb,
                 Time = DateTime.Now
-            });
+            };
+
+            switch (type)
+            {
+                case LogPanelType.Order:
+                    OrderLogs.Add(entry);
+                    break;
+                case LogPanelType.Strategy:
+                    StrategyLogs.Add(entry);
+                    break;
+                case LogPanelType.Agent:
+                    AgentLogs.Add(entry);
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// 获取指定类型的日志
+        /// </summary>
+        public List<LogEntry> GetLogs(LogPanelType type)
+        {
+            return type switch
+            {
+                LogPanelType.Order => OrderLogs,
+                LogPanelType.Strategy => StrategyLogs,
+                LogPanelType.Agent => AgentLogs,
+                _ => OrderLogs
+            };
+        }
+
+        /// <summary>
+        /// 清除策略和 Trailing Stop 状态（全部清仓后调用）
+        /// </summary>
+        public void ClearStrategyState()
+        {
+            // 策略状态
+            TriggerPrice = 0;
+            StopPrice = 0;
+            StrategyEnabled = false;
+            HasTriggeredBuy = false;
+            HasTriggeredSell = false;
+            PositionMode = AddPositionMode.None;
+
+            // Trailing Stop 状态
+            TrailingSinceHigh = 0;
+            TrailHalf = 0;
+            TrailAll = 0;
+            BarRanges.Clear();
+            HasTriggeredTrailHalf = false;
+            RemainingShares = 0;
+            LastBarTime = DateTime.MinValue;
+            TrailingStopActive = false;
         }
     }
 

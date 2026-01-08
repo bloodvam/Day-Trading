@@ -16,6 +16,9 @@ namespace TradingEngine.Config
         public double RiskAmount { get; set; } = 10.0;
         public double SpreadPercent { get; set; } = 0.03;
         public double Leverage { get; set; } = 6.0;
+        public double SingleStockBPMultiplier { get; set; } = 3.0;  // 单股票 BP = Equity × 此值
+        public int MaxSharesPerSymbol { get; set; } = 10000;        // 单股票最大持股数
+        public double MinRiskPerShare { get; set; } = 0.05;          // 最小每股风险（Ask - Stop）
         public string BuyRoute { get; set; } = "VLCTL";
         public string SellRoute { get; set; } = "VLCTL";
         public string StopRoute { get; set; } = "STOP";

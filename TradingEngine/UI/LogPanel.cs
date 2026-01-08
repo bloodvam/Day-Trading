@@ -4,18 +4,29 @@ using TradingEngine.Managers;
 namespace TradingEngine.UI
 {
     /// <summary>
-    /// 日志面板 - 每个 Symbol 独立的日志
+    /// 日志面板 - 可复用组件，支持 Order/Strategy/Agent 三种类型
     /// </summary>
     public class LogPanel : BasePanel
     {
         private RichTextBox _logBox;
         private Label _lblTitle;
+        private readonly LogPanelType _panelType;
+        private readonly string _typeLabel;
 
-        // Global 日志（连接状态、热键等）
+        // Global 日志（仅 Order 类型使用）
         private readonly List<LogEntry> _globalLogs = new();
 
-        public LogPanel(TradingController controller) : base(controller)
+        public LogPanel(TradingController controller, LogPanelType panelType) : base(controller)
         {
+            _panelType = panelType;
+            _typeLabel = panelType switch
+            {
+                LogPanelType.Order => "Order",
+                LogPanelType.Strategy => "Strategy",
+                LogPanelType.Agent => "Agent",
+                _ => "Log"
+            };
+
             this.Dock = DockStyle.Fill;
             BuildUI();
             BindEvents();
@@ -31,7 +42,7 @@ namespace TradingEngine.UI
 
             _lblTitle = new Label
             {
-                Text = "Log:",
+                Text = $"{_typeLabel} Log:",
                 Location = new Point(0, 5),
                 Size = new Size(200, 20)
             };
@@ -52,6 +63,32 @@ namespace TradingEngine.UI
 
         private void BindEvents()
         {
+            // Symbol 切换
+            Controller.ActiveSymbolChanged += (symbol) => InvokeUI(() => OnActiveSymbolChanged(symbol));
+
+            // 新操作开始（清空当前 symbol 的日志）
+            Controller.NewOperationStarted += () => InvokeUI(() => OnNewOperationStarted());
+
+            // 根据类型订阅不同的日志事件
+            switch (_panelType)
+            {
+                case LogPanelType.Order:
+                    BindOrderEvents();
+                    break;
+                case LogPanelType.Strategy:
+                    Controller.StrategyLog += (msg) => InvokeUI(() => OnLogMessage(msg));
+                    break;
+                case LogPanelType.Agent:
+                    Controller.AgentLog += (msg) => InvokeUI(() => OnLogMessage(msg));
+                    break;
+            }
+        }
+
+        private void BindOrderEvents()
+        {
+            // 日志事件
+            Controller.OrderLog += (msg) => InvokeUI(() => OnLogMessage(msg));
+
             // Global 日志：连接状态
             Controller.LoginSuccess += () => InvokeUI(() => AppendGlobalLog("connect successfully", Color.DarkGreen));
             Controller.LoginFailed += (msg) => InvokeUI(() => AppendGlobalLog("connection error", Color.Red));
@@ -61,21 +98,14 @@ namespace TradingEngine.UI
             Controller.SymbolSubscribed += (symbol) => InvokeUI(() => AppendGlobalLog($"subscribe {symbol} successfully", Color.DarkGreen));
             Controller.SymbolUnsubscribed += (symbol) => InvokeUI(() => AppendGlobalLog($"unsubscribe {symbol}", Color.Gray));
 
-            // Symbol 切换
-            Controller.ActiveSymbolChanged += (symbol) => InvokeUI(() => OnActiveSymbolChanged(symbol));
-
             // OrderAct (来自 DAS 原始消息)
             Controller.RawMessage += (msg) => InvokeUI(() => OnRawMessage(msg));
-
-            // OrderManager 的 Log 消息
-            Controller.Log += (msg) => InvokeUI(() => OnLogMessage(msg));
-
-            // 新操作开始（清空当前 symbol 的日志）
-            Controller.NewOperationStarted += () => InvokeUI(() => OnNewOperationStarted());
         }
 
         public void LogHotkeyResult(bool allSuccess, string? failedKey = null)
         {
+            if (_panelType != LogPanelType.Order) return;
+
             if (allSuccess)
             {
                 AppendGlobalLog("hotkey register successfully", Color.DarkGreen);
@@ -88,7 +118,9 @@ namespace TradingEngine.UI
 
         private void OnActiveSymbolChanged(string? symbol)
         {
-            _lblTitle.Text = string.IsNullOrEmpty(symbol) ? "Log:" : $"Log: [{symbol}]";
+            _lblTitle.Text = string.IsNullOrEmpty(symbol)
+                ? $"{_typeLabel} Log:"
+                : $"{_typeLabel} Log: [{symbol}]";
             RefreshLogDisplay();
         }
 
@@ -98,7 +130,7 @@ namespace TradingEngine.UI
             if (!string.IsNullOrEmpty(symbol))
             {
                 var state = Controller.GetSymbolState(symbol);
-                state?.ClearLogs();
+                state?.ClearLogs(_panelType);
                 RefreshLogDisplay();
             }
         }
@@ -162,7 +194,7 @@ namespace TradingEngine.UI
             if (state == null) return;
 
             string timestamped = $"[{DateTime.Now:HH:mm:ss}] {message}";
-            state.AddLog(timestamped, color.ToArgb());
+            state.AddLog(_panelType, timestamped, color.ToArgb());
 
             AppendToLogBox(timestamped, color);
         }
@@ -174,9 +206,13 @@ namespace TradingEngine.UI
             var symbol = Controller.ActiveSymbol;
             if (string.IsNullOrEmpty(symbol))
             {
-                foreach (var entry in _globalLogs)
+                // 无 symbol 时，Order 面板显示全局日志，其他面板不显示
+                if (_panelType == LogPanelType.Order)
                 {
-                    AppendToLogBox(entry.Message, Color.FromArgb(entry.ColorArgb));
+                    foreach (var entry in _globalLogs)
+                    {
+                        AppendToLogBox(entry.Message, Color.FromArgb(entry.ColorArgb));
+                    }
                 }
             }
             else
@@ -184,7 +220,8 @@ namespace TradingEngine.UI
                 var state = Controller.GetSymbolState(symbol);
                 if (state != null)
                 {
-                    foreach (var entry in state.Logs)
+                    var logs = state.GetLogs(_panelType);
+                    foreach (var entry in logs)
                     {
                         AppendToLogBox(entry.Message, Color.FromArgb(entry.ColorArgb));
                     }

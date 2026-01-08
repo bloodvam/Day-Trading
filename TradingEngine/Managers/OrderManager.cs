@@ -21,6 +21,7 @@ namespace TradingEngine.Managers
 
         public event Action<string>? Log;
         public event Action<int>? NewOrderSent;
+        public event Action<string>? BuyOrderFailed;  // 买单失败（Canceled/Rejected），参数是 symbol
 
         public OrderManager(
             DasClient client,
@@ -81,7 +82,7 @@ namespace TradingEngine.Managers
                     if (order.Token == state.LastBuy.Token && state.LastBuy.OrderId == 0)
                     {
                         state.LastBuy.OrderId = order.OrderId;
-                        Log?.Invoke($"LastBuy [{order.Symbol}]: Token {order.Token} -> OrderId {order.OrderId}");
+                        //Log?.Invoke($"LastBuy [{order.Symbol}]: Token {order.Token} -> OrderId {order.OrderId}");
                     }
                 }
 
@@ -97,7 +98,7 @@ namespace TradingEngine.Managers
                 var position = _accountManager.GetPosition(order.Symbol);
                 int totalShares = position?.Quantity ?? order.FilledQuantity;
 
-                Log?.Invoke($"Buy order {order.OrderId} executed, placing stop for {totalShares} shares at {pendingStop.stopPrice:F2}");
+                //Log?.Invoke($"Buy order {order.OrderId} executed, placing stop for {totalShares} shares at {pendingStop.stopPrice:F2}");
 
                 // TODO: 策略测试期间暂时不挂止损，由策略控制卖出
                 // await PlaceStopOrder(order.Symbol, totalShares, pendingStop.stopPrice);
@@ -127,6 +128,8 @@ namespace TradingEngine.Managers
                             Log?.Invoke($"Buy order {order.OrderId} {order.Status}, removed pending stop (Token={order.Token})");
                         }
                     }
+                    // 通知买单失败
+                    BuyOrderFailed?.Invoke(order.Symbol);
                     return;
                 }
 
@@ -166,7 +169,7 @@ namespace TradingEngine.Managers
                 var pendingSell = state.PendingSell;
                 if (pendingSell == null) return;
 
-                Log?.Invoke($"Stop order {order.OrderId} canceled, now placing sell order");
+                //Log?.Invoke($"Stop order {order.OrderId} canceled, now placing sell order");
 
                 var config = AppConfig.Instance.Trading;
                 int token = GetNextToken();
@@ -206,18 +209,18 @@ namespace TradingEngine.Managers
 
                 if (pendingSell.IsSellAll)
                 {
-                    Log?.Invoke($"Sell all completed for {pos.Symbol}, no stop order needed");
+                    //Log?.Invoke($"Sell all completed for {pos.Symbol}, no stop order needed");
                     return;
                 }
 
                 if (pos.Quantity > 0 && pendingSell.StopTriggerPrice > 0)
                 {
-                    Log?.Invoke($"Position updated for {pos.Symbol}: {pos.Quantity} shares, re-placing stop at {pendingSell.StopTriggerPrice:F2}");
+                    //Log?.Invoke($"Position updated for {pos.Symbol}: {pos.Quantity} shares, re-placing stop at {pendingSell.StopTriggerPrice:F2}");
                     await PlaceStopOrder(pos.Symbol, pos.Quantity, pendingSell.StopTriggerPrice);
                 }
                 else
                 {
-                    Log?.Invoke($"Position cleared for {pos.Symbol}, no stop order needed");
+                    //Log?.Invoke($"Position cleared for {pos.Symbol}, no stop order needed");
                 }
             }
             catch (Exception ex)
@@ -245,7 +248,7 @@ namespace TradingEngine.Managers
                     if (trade.OrderId == state.LastBuy.OrderId && state.LastBuy.OrderId != 0)
                     {
                         state.LastBuy.AddTrade(trade.Price, trade.Quantity);
-                        Log?.Invoke($"LastBuy Trade [{trade.Symbol}]: OrderId={trade.OrderId}, Price={trade.Price:F2}, Qty={trade.Quantity}, AvgPrice={state.LastBuy.AvgPrice:F2}");
+                        //Log?.Invoke($"LastBuy Trade [{trade.Symbol}]: OrderId={trade.OrderId}, Price={trade.Price:F2}, Qty={trade.Quantity}, AvgPrice={state.LastBuy.AvgPrice:F2}");
                     }
                 }
             }
@@ -306,7 +309,7 @@ namespace TradingEngine.Managers
 
         #region Trading Actions
 
-        public async Task<bool> BuyOneR()
+        public async Task<bool> BuyOneR(double stopPrice)
         {
             var config = AppConfig.Instance.Trading;
             string? symbol = _dataManager.ActiveSymbol;
@@ -332,12 +335,10 @@ namespace TradingEngine.Managers
             }
 
             double askPrice = state.Quote.Ask;
-            double bidPrice = state.Quote.Bid;
 
-            var (stopPrice, usedLastBar) = GetSmartStopPrice(symbol, bidPrice);
             if (stopPrice <= 0)
             {
-                Log?.Invoke($"Cannot determine stop price for {symbol}");
+                Log?.Invoke($"Invalid stop price: {stopPrice}");
                 return false;
             }
 
@@ -356,6 +357,28 @@ namespace TradingEngine.Managers
                 return false;
             }
 
+            // BP 限制：单股票可用 BP = Equity × 3 × 0.97 - 当前持仓成本
+            int maxSharesByBP = CalculateMaxSharesByBP(symbol, askPrice);
+
+            // 持仓限制：单股票最大持股数
+            var position = _accountManager.GetPosition(symbol);
+            int currentShares = position?.Quantity ?? 0;
+            int maxSharesByPosition = config.MaxSharesPerSymbol - currentShares;
+
+            // 取两个限制的较小值
+            int maxShares = Math.Min(maxSharesByBP, maxSharesByPosition);
+
+            if (maxShares <= 0)
+            {
+                Log?.Invoke($"Cannot buy {symbol}: BP limit={maxSharesByBP}, Position limit={maxSharesByPosition} (holding {currentShares})");
+                return false;
+            }
+            if (shares > maxShares)
+            {
+                Log?.Invoke($"Limit: planned {shares} reduced to {maxShares} (BP={maxSharesByBP}, Pos={maxSharesByPosition})");
+                shares = maxShares;
+            }
+
             double limitPrice = Math.Round(askPrice * (1 + config.SpreadPercent), 2);
 
             int token = GetNextToken();
@@ -366,8 +389,7 @@ namespace TradingEngine.Managers
                 state.LastBuy.Reset(token);
             }
 
-            string barInfo = usedLastBar ? "LastBar" : "CurrentBar";
-            //Log?.Invoke($"BUY {symbol} {shares}@{limitPrice:F2} (Ask={askPrice:F2}, Stop={stopPrice:F2} [{barInfo}], Token={token})");
+            //Log?.Invoke($"BUY {symbol} {shares}@{limitPrice:F2} (Ask={askPrice:F2}, Stop={stopPrice:F2}, Token={token})");
 
             NewOrderSent?.Invoke(token);
             await _client.PlaceLimitOrder(
@@ -376,6 +398,124 @@ namespace TradingEngine.Managers
                 symbol,
                 config.BuyRoute,
                 shares,
+                limitPrice,
+                "DAY+"
+            );
+
+            return true;
+        }
+
+        /// <summary>
+        /// 加仓
+        /// </summary>
+        /// <param name="newStopPrice">新的止损价</param>
+        /// <param name="riskFactor">风险因子：1.0 = All Profit, 0.5 = 1/2 Profit</param>
+        public async Task<bool> AddPosition(double newStopPrice, double riskFactor)
+        {
+            var config = AppConfig.Instance.Trading;
+            string? symbol = _dataManager.ActiveSymbol;
+
+            if (string.IsNullOrEmpty(symbol))
+            {
+                Log?.Invoke("No symbol subscribed");
+                return false;
+            }
+
+            var state = _dataManager.Get(symbol);
+            if (state == null || state.Quote.Ask <= 0 || state.Quote.Bid <= 0)
+            {
+                Log?.Invoke($"No valid quote for {symbol}");
+                return false;
+            }
+
+            var position = _accountManager.GetPosition(symbol);
+            if (position == null || position.Quantity <= 0)
+            {
+                Log?.Invoke($"No position for {symbol}");
+                return false;
+            }
+
+            double askPrice = state.Quote.Ask;
+            double bidPrice = state.Quote.Bid;
+            int Q1 = position.Quantity;
+            double P1 = position.AvgCost;
+
+            // 计算当前利润（用 Bid）
+            double profit = Q1 * (bidPrice - P1);
+            Log?.Invoke($"[AddPosition] Q1={Q1}, P1={P1:F3}, Bid={bidPrice:F3}, Profit={profit:F2}");
+
+            // 计算原仓位在止损价的盈亏
+            double gainOnOriginal = Q1 * (newStopPrice - P1);
+            Log?.Invoke($"[AddPosition] NewStopPrice={newStopPrice:F3}, GainOnOriginal={gainOnOriginal:F2}");
+
+            // 计算加仓每股亏损
+            double lossPerShare = askPrice - newStopPrice;
+            if (lossPerShare <= 0)
+            {
+                Log?.Invoke($"[AddPosition] Invalid: Ask={askPrice:F3} <= StopPrice={newStopPrice:F3}");
+                return false;
+            }
+
+            // 计算加仓股数
+            // Add All:  Q2 = gainOnOriginal / lossPerShare
+            // Add 1/2:  Q2 = (gainOnOriginal - profit/2) / lossPerShare
+            double targetGain = gainOnOriginal - profit * (1 - riskFactor);
+            int Q2 = (int)(targetGain / lossPerShare);
+
+            string modeStr = riskFactor >= 1.0 ? "All" : "1/2";
+            Log?.Invoke($"[AddPosition] Mode={modeStr}, TargetGain={targetGain:F2}, LossPerShare={lossPerShare:F3}, Q2={Q2}");
+
+            // 如果 Q2 <= 0，不买入
+            if (Q2 <= 0)
+            {
+                Log?.Invoke($"[AddPosition] Q2={Q2} <= 0, skip buy");
+                return false;
+            }
+
+            // 最小仓位 1R
+            int minShares = (int)(config.RiskAmount / lossPerShare);
+            if (minShares > 0 && Q2 < minShares)
+            {
+                Log?.Invoke($"[AddPosition] Q2={Q2} < 1R({minShares}), use 1R");
+                Q2 = minShares;
+            }
+
+            // BP 限制：单股票可用 BP = Equity × 3 × 0.97 - 当前持仓成本
+            int maxSharesByBP = CalculateMaxSharesByBP(symbol, askPrice);
+
+            // 持仓限制：单股票最大持股数
+            int maxSharesByPosition = config.MaxSharesPerSymbol - Q1;
+
+            // 取两个限制的较小值
+            int maxShares = Math.Min(maxSharesByBP, maxSharesByPosition);
+
+            if (maxShares <= 0)
+            {
+                Log?.Invoke($"[AddPosition] Cannot buy {symbol}: BP limit={maxSharesByBP}, Position limit={maxSharesByPosition} (holding {Q1})");
+                return false;
+            }
+            if (Q2 > maxShares)
+            {
+                Log?.Invoke($"[AddPosition] Limit: planned {Q2} reduced to {maxShares} (BP={maxSharesByBP}, Pos={maxSharesByPosition})");
+                Q2 = maxShares;
+            }
+
+            // 更新 StopPrice
+            state.StopPrice = newStopPrice;
+
+            // 发送买入订单
+            double limitPrice = Math.Round(askPrice * (1 + config.SpreadPercent), 2);
+            int token = GetNextToken();
+
+            Log?.Invoke($"ADD {symbol} {Q2}@{limitPrice:F2} (Ask={askPrice:F2}, NewStop={newStopPrice:F2}, Mode={modeStr})");
+
+            NewOrderSent?.Invoke(token);
+            await _client.PlaceLimitOrder(
+                token,
+                "B",
+                symbol,
+                config.BuyRoute,
+                Q2,
                 limitPrice,
                 "DAY+"
             );
@@ -411,7 +551,7 @@ namespace TradingEngine.Managers
             double limitPrice = Math.Round(state.Quote.Bid * (1 - config.SpreadPercent), 2);
             int shares = position.Quantity;
 
-            Log?.Invoke($"SELL ALL {symbol} {shares}@{limitPrice:F2} (Bid={state.Quote.Bid:F2})");
+            //Log?.Invoke($"SELL ALL {symbol} {shares}@{limitPrice:F2} (Bid={state.Quote.Bid:F2})");
 
             var stopOrder = _accountManager.GetStopOrder(symbol);
             if (stopOrder != null)
@@ -438,6 +578,70 @@ namespace TradingEngine.Managers
                     symbol,
                     config.SellRoute,
                     shares,
+                    limitPrice,
+                    "DAY+"
+                );
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// 卖出指定数量的股票
+        /// </summary>
+        public async Task<bool> SellShares(int sharesToSell)
+        {
+            var config = AppConfig.Instance.Trading;
+            string? symbol = _dataManager.ActiveSymbol;
+
+            if (string.IsNullOrEmpty(symbol))
+            {
+                Log?.Invoke("No symbol subscribed");
+                return false;
+            }
+
+            if (sharesToSell <= 0)
+            {
+                Log?.Invoke($"Invalid shares to sell: {sharesToSell}");
+                return false;
+            }
+
+            var state = _dataManager.Get(symbol);
+            if (state == null || state.Quote.Bid <= 0)
+            {
+                Log?.Invoke($"No valid quote for {symbol}");
+                return false;
+            }
+
+            double limitPrice = Math.Round(state.Quote.Bid * (1 - config.SpreadPercent), 2);
+
+            //Log?.Invoke($"SELL {symbol} {sharesToSell}@{limitPrice:F2} (Bid={state.Quote.Bid:F2})");
+
+            var stopOrder = _accountManager.GetStopOrder(symbol);
+            if (stopOrder != null)
+            {
+                state.PendingSell = new PendingSellInfo
+                {
+                    SellShares = sharesToSell,
+                    SellLimitPrice = limitPrice,
+                    StopTriggerPrice = 0,
+                    StopLimitPrice = 0,
+                    IsSellAll = true
+                };
+
+                Log?.Invoke($"Canceling stop order {stopOrder.OrderId} before sell");
+                await _client.CancelOrder(stopOrder.OrderId);
+            }
+            else
+            {
+                int token = GetNextToken();
+                NewOrderSent?.Invoke(token);
+                await _client.PlaceLimitOrder(
+                    token,
+                    "S",
+                    symbol,
+                    config.SellRoute,
+                    sharesToSell,
                     limitPrice,
                     "DAY+"
                 );
@@ -490,7 +694,7 @@ namespace TradingEngine.Managers
 
             double limitPrice = Math.Round(state.Quote.Bid * (1 - config.SpreadPercent), 2);
 
-            Log?.Invoke($"SELL {label} {symbol} {shares}@{limitPrice:F2} (Bid={state.Quote.Bid:F2})");
+            //Log?.Invoke($"SELL {label} {symbol} {shares}@{limitPrice:F2} (Bid={state.Quote.Bid:F2})");
 
             var stopOrder = _accountManager.GetStopOrder(symbol);
             if (stopOrder != null)
@@ -656,6 +860,26 @@ namespace TradingEngine.Managers
                 return false;
             }
 
+            // BP 限制：单股票可用 BP = Equity × 3 × 0.97 - 当前持仓成本
+            int maxSharesByBP = CalculateMaxSharesByBP(symbol, askPrice);
+
+            // 持仓限制：单股票最大持股数
+            int maxSharesByPosition = config.MaxSharesPerSymbol - currentQty;
+
+            // 取两个限制的较小值
+            int maxSharesAllowed = Math.Min(maxSharesByBP, maxSharesByPosition);
+
+            if (maxSharesAllowed <= 0)
+            {
+                Log?.Invoke($"Cannot add position: BP limit={maxSharesByBP}, Position limit={maxSharesByPosition} (holding {currentQty})");
+                return false;
+            }
+            if (sharesToAdd > maxSharesAllowed)
+            {
+                Log?.Invoke($"Limit: planned {sharesToAdd} reduced to {maxSharesAllowed} (BP={maxSharesByBP}, Pos={maxSharesByPosition})");
+                sharesToAdd = maxSharesAllowed;
+            }
+
             int token = GetNextToken();
 
             lock (_lock)
@@ -693,6 +917,34 @@ namespace TradingEngine.Managers
         #endregion
 
         #region Helper Methods
+
+        /// <summary>
+        /// 计算单股票可买入的最大股数（基于 BP 限制）
+        /// 公式：可用 BP = Equity × 3 × 0.97 - 当前持仓成本
+        /// </summary>
+        private int CalculateMaxSharesByBP(string symbol, double buyPrice)
+        {
+            var config = AppConfig.Instance.Trading;
+            double equity = _accountManager.AccountInfo.CurrentEquity;
+
+            if (equity <= 0 || buyPrice <= 0) return 0;
+
+            // 获取当前持仓成本
+            double currentPositionCost = 0;
+            var position = _accountManager.GetPosition(symbol);
+            if (position != null && position.Quantity > 0)
+            {
+                currentPositionCost = position.AvgCost * position.Quantity;
+            }
+
+            // 可用 BP = Equity × 3 × 0.97 - 当前持仓成本
+            double availableBP = equity * config.SingleStockBPMultiplier * 0.97 - currentPositionCost;
+
+            if (availableBP <= 0) return 0;
+
+            int maxShares = (int)(availableBP / buyPrice);
+            return maxShares;
+        }
 
         private async Task PlaceStopOrder(string symbol, int shares, double stopPrice)
         {

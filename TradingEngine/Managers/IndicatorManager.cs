@@ -15,6 +15,8 @@ namespace TradingEngine.Managers
         public event Action<string, double, double>? IndicatorsUpdated;  // symbol, atr14, ema20
         public event Action<string, double>? VwapUpdated;                // symbol, vwap
         public event Action<string, double>? SessionHighUpdated;         // symbol, sessionHigh
+        public event Action<string, bool>? EMA20Crossed;                 // symbol, isAbove
+        public event Action<string, bool>? VWAPCrossed;                  // symbol, isAbove
 
         public IndicatorManager(DasClient client, BarAggregator barAggregator, SymbolDataManager dataManager)
         {
@@ -66,6 +68,28 @@ namespace TradingEngine.Managers
                 {
                     state.SessionHigh = tick.Price;
                     SessionHighUpdated?.Invoke(tick.Symbol, state.SessionHigh);
+                }
+
+                // EMA20 穿越检测
+                if (state.EMA20 > 0)
+                {
+                    bool isAbove = tick.Price > state.EMA20;
+                    if (isAbove != state.IsAboveEMA20)
+                    {
+                        state.IsAboveEMA20 = isAbove;
+                        EMA20Crossed?.Invoke(tick.Symbol, isAbove);
+                    }
+                }
+
+                // VWAP 穿越检测
+                if (state.VWAP > 0)
+                {
+                    bool isAbove = tick.Price > state.VWAP;
+                    if (isAbove != state.IsAboveVWAP)
+                    {
+                        state.IsAboveVWAP = isAbove;
+                        VWAPCrossed?.Invoke(tick.Symbol, isAbove);
+                    }
                 }
             }
 

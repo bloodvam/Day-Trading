@@ -17,6 +17,7 @@ namespace TradingEngine.Core
         private readonly OrderManager _orderManager;
         private readonly IndicatorManager _indicatorManager;
         private readonly StrategyManager _strategyManager;
+        private readonly AgentStrategy _agentStrategy;
 
         private HotkeyManager? _hotkeyManager;
 
@@ -51,6 +52,12 @@ namespace TradingEngine.Core
         public event Action<string, double, double>? IndicatorsUpdated;  // symbol, atr14, ema20
         public event Action<string, double>? VwapUpdated;                // symbol, vwap
         public event Action<string, double>? SessionHighUpdated;         // symbol, sessionHigh
+        public event Action<string, bool>? EMA20Crossed;                 // symbol, isAbove
+        public event Action<string, bool>? VWAPCrossed;                  // symbol, isAbove
+        public event Action<string, double, double>? TrailingStopUpdated; // symbol, trailHalf, trailAll
+        public event Action<string, double>? AgentTriggerPriceUpdated;   // symbol, triggerPrice
+        public event Action<string, bool>? AgentStateChanged;            // symbol, isEnabled
+        public event Action<string, double>? LevelCrossed;               // symbol, ceilLevel (价格跨越关键位)
 
         #endregion
 
@@ -73,6 +80,9 @@ namespace TradingEngine.Core
         #region Events - Logging
 
         public event Action<string>? Log;
+        public event Action<string>? OrderLog;
+        public event Action<string>? StrategyLog;
+        public event Action<string>? AgentLog;
         public event Action<string>? RawMessage;
         public event Action<string>? CommandSent;
 
@@ -96,6 +106,7 @@ namespace TradingEngine.Core
             _orderManager = new OrderManager(_client, _accountManager, _dataManager, _barAggregator);
             _indicatorManager = new IndicatorManager(_client, _barAggregator, _dataManager);
             _strategyManager = new StrategyManager(_client, _dataManager, _barAggregator, _orderManager, _accountManager);
+            _agentStrategy = new AgentStrategy(_dataManager, _barAggregator);
 
             SubscribeInternalEvents();
         }
@@ -160,6 +171,20 @@ namespace TradingEngine.Core
                     SessionHighUpdated?.Invoke(symbol, high);
                 }
             };
+            _indicatorManager.EMA20Crossed += (symbol, isAbove) =>
+            {
+                if (symbol == _dataManager.ActiveSymbol)
+                {
+                    EMA20Crossed?.Invoke(symbol, isAbove);
+                }
+            };
+            _indicatorManager.VWAPCrossed += (symbol, isAbove) =>
+            {
+                if (symbol == _dataManager.ActiveSymbol)
+                {
+                    VWAPCrossed?.Invoke(symbol, isAbove);
+                }
+            };
 
             // Account events
             _accountManager.AccountInfoChanged += (a) => AccountInfoChanged?.Invoke(a);
@@ -167,9 +192,55 @@ namespace TradingEngine.Core
             _accountManager.OrderAdded += (o) => OrderAdded?.Invoke(o);
             _accountManager.OrderRemoved += (o) => OrderRemoved?.Invoke(o);
 
-            // Logging
-            _orderManager.Log += (msg) => Log?.Invoke(msg);
-            _strategyManager.Log += (msg) => Log?.Invoke(msg);
+            // Logging - 分类日志
+            _orderManager.Log += (msg) => OrderLog?.Invoke(msg);
+            _strategyManager.Log += (msg) => StrategyLog?.Invoke(msg);
+            _strategyManager.TrailingStopUpdated += (symbol, trailHalf, trailAll) =>
+            {
+                if (symbol == _dataManager.ActiveSymbol)
+                {
+                    TrailingStopUpdated?.Invoke(symbol, trailHalf, trailAll);
+                }
+            };
+            _strategyManager.ValidTickReceived += (tick) => _agentStrategy.OnValidTickReceived(tick);
+
+            // Agent Strategy
+            _agentStrategy.Log += (msg) => AgentLog?.Invoke(msg);
+            _agentStrategy.TriggerPriceUpdated += (symbol, price) =>
+            {
+                if (symbol == _dataManager.ActiveSymbol)
+                {
+                    AgentTriggerPriceUpdated?.Invoke(symbol, price);
+                }
+            };
+            _agentStrategy.AgentStateChanged += (symbol, isEnabled) =>
+            {
+                if (symbol == _dataManager.ActiveSymbol)
+                {
+                    AgentStateChanged?.Invoke(symbol, isEnabled);
+                }
+            };
+            _agentStrategy.LevelCrossed += (symbol, ceilLevel) =>
+            {
+                if (symbol == _dataManager.ActiveSymbol)
+                {
+                    LevelCrossed?.Invoke(symbol, ceilLevel);
+                }
+            };
+            _agentStrategy.OpenSignalTriggered += (symbol, triggerPrice) =>
+            {
+                StartOpen(symbol, triggerPrice);
+            };
+
+            // 实际发送买单时关闭 Agent
+            _strategyManager.BuyTriggered += (symbol) =>
+            {
+                if (_agentStrategy.IsEnabled(symbol))
+                {
+                    _agentStrategy.Disable(symbol);
+                }
+            };
+
             _client.RawMessage += (msg) => RawMessage?.Invoke(msg);
             _client.CommandSent += (msg) => CommandSent?.Invoke(msg);
 
@@ -221,7 +292,25 @@ namespace TradingEngine.Core
             {
                 Log?.Invoke("Hotkey: Buy 1R triggered");
                 NewOperationStarted?.Invoke();
-                await _orderManager.BuyOneR();
+
+                // Hotkey 触发时，用 currentBar.Low 作为止损价
+                string? symbol = _dataManager.ActiveSymbol;
+                if (string.IsNullOrEmpty(symbol)) return;
+
+                var currentBar = _barAggregator.GetCurrentBar(symbol);
+                if (currentBar == null) return;
+
+                double stopPrice = currentBar.Low;
+
+                // 更新 state.StopPrice
+                var state = _dataManager.Get(symbol);
+                if (state != null)
+                {
+                    state.StopPrice = stopPrice;
+                    state.StrategyEnabled = true;
+                }
+
+                await _orderManager.BuyOneR(stopPrice);
             }
             catch (Exception ex)
             {
@@ -326,6 +415,19 @@ namespace TradingEngine.Core
             }
         }
 
+        public async Task CancelOrder(int orderId)
+        {
+            try
+            {
+                Log?.Invoke($"Cancel order {orderId}");
+                await _client.CancelOrder(orderId);
+            }
+            catch (Exception ex)
+            {
+                Log?.Invoke($"CancelOrder error: {ex.Message}");
+            }
+        }
+
         #endregion
 
         #region Hotkeys
@@ -394,15 +496,96 @@ namespace TradingEngine.Core
             Log?.Invoke($"Session High reset for {symbol}" + (initialValue.HasValue ? $": Initial={initialValue:F3}" : ""));
         }
 
-        public void StartStrategy(string symbol, double triggerPrice)
+        public void StartOpen(string symbol, double triggerPrice)
         {
-            _strategyManager.StartStrategy(symbol, triggerPrice);
+            _strategyManager.StartOpen(symbol, triggerPrice);
+        }
+
+        public void StartAddAll(string symbol, double triggerPrice)
+        {
+            _strategyManager.StartAddAll(symbol, triggerPrice);
+        }
+
+        public void StartAddHalf(string symbol, double triggerPrice)
+        {
+            _strategyManager.StartAddHalf(symbol, triggerPrice);
         }
 
         public void StopStrategy(string symbol)
         {
             _strategyManager.StopStrategy(symbol);
         }
+
+        #region Agent Mode
+
+        public void EnableAgent(string symbol)
+        {
+            _agentStrategy.Enable(symbol);
+        }
+
+        public void DisableAgent(string symbol)
+        {
+            _agentStrategy.Disable(symbol);
+        }
+
+        public bool IsAgentEnabled(string symbol)
+        {
+            return _agentStrategy.IsEnabled(symbol);
+        }
+
+        public double GetAgentTriggerPrice(string symbol)
+        {
+            return _agentStrategy.GetTriggerPrice(symbol);
+        }
+
+        public void SetAgentBreakedLevel(string symbol, double level)
+        {
+            _agentStrategy.SetBreakedLevel(symbol, level);
+        }
+
+        /// <summary>
+        /// AutoFill 开仓：无持仓时触发 StartOpen，有持仓时只返回 true
+        /// </summary>
+        /// <returns>true 表示只填充，false 表示已触发 StartOpen</returns>
+        public bool AutoFillOpen(string symbol, double price)
+        {
+            if (string.IsNullOrEmpty(symbol)) return true;
+
+            var pos = _accountManager.GetPosition(symbol);
+            bool hasPosition = pos != null && pos.Quantity > 0;
+
+            if (hasPosition)
+            {
+                Log?.Invoke($"AutoFill: {price:F2}");
+                return true;  // 只填充
+            }
+            else
+            {
+                StartOpen(symbol, price);
+                Log?.Invoke($"AutoFill: StartOpen at {price:F2}");
+                return false;  // 已触发
+            }
+        }
+
+        /// <summary>
+        /// 获取 AutoFill 价格（ceil1, ceil2, ceilSessionHigh）
+        /// </summary>
+        public (double ceil1, double ceil2, double ceilSessionHigh) GetAutoFillPrices(string symbol)
+        {
+            var state = _dataManager.Get(symbol);
+            if (state == null) return (0, 0, 0);
+
+            double lastPrice = state.Quote.Last;
+            double sessionHigh = state.SessionHigh;
+
+            double ceil1 = lastPrice > 0 ? AgentStrategy.CeilLevel(lastPrice) : 0;
+            double ceil2 = ceil1 > 0 ? ceil1 + 0.5 : 0;
+            double ceilSessionHigh = sessionHigh > 0 ? AgentStrategy.CeilLevel(sessionHigh) : 0;
+
+            return (ceil1, ceil2, ceilSessionHigh);
+        }
+
+        #endregion
 
         public Bar? GetCurrentBar()
         {
@@ -464,6 +647,7 @@ namespace TradingEngine.Core
         {
             _hotkeyManager?.Dispose();
             _strategyManager.Dispose();
+            _agentStrategy.Dispose();
             _indicatorManager.Dispose();
             _orderManager.Dispose();
             _barAggregator.Dispose();
