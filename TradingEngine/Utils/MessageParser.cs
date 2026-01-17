@@ -1,5 +1,6 @@
 ﻿using System.Globalization;
 using TradingEngine.Models;
+using System.Diagnostics;
 
 namespace TradingEngine.Utils
 {
@@ -12,7 +13,8 @@ namespace TradingEngine.Utils
         {
             // $Quote MSFT A:26.33 Asz:2 B:26.32 Bsz:3 V:89765 L:26.35 Hi:0 Lo:0 op:0 ycl:25.96 tcl:0 PE:Q
             if (!line.StartsWith("$Quote ")) return;
-
+           // Debug.WriteLine(line);
+          //  Debug.WriteLine(quote);
             var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length < 2) return;
 
@@ -346,6 +348,34 @@ namespace TradingEngine.Utils
             try
             {
                 return (ParseDouble(parts[1]), ParseDouble(parts[2]));
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 解析 $Bar 分钟数据消息（只提取 High 用于 SessionHigh）
+        /// </summary>
+        public static (string symbol, double high)? ParseMinuteBarHigh(string line)
+        {
+            // $Bar symbol date-time High Low Open Close Volume MinType
+            // $Bar C 2012/01/05-09:09 27.73 27.69 27.73 27.69 5000 1
+            if (!line.StartsWith("$Bar ")) return null;
+            var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 4) return null;
+
+            try
+            {
+                string symbol = parts[1];
+
+                // 判断是日线还是分钟线：分钟线的日期格式是 yyyy/MM/dd-HH:mm
+                string dateTime = parts[2];
+                if (!dateTime.Contains("-")) return null;  // 日线数据，跳过
+
+                double high = ParseDouble(parts[3]);
+                return (symbol, high);
             }
             catch
             {

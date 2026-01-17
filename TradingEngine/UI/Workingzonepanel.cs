@@ -1,4 +1,5 @@
 ﻿using TradingEngine.Core;
+using TradingEngine.Managers;
 
 namespace TradingEngine.UI
 {
@@ -8,43 +9,60 @@ namespace TradingEngine.UI
     public class WorkingZonePanel : BasePanel
     {
         // 数据显示区
-        private Label _lblATR;
-        private Label _lblEMA;
-        private Label _lblVWAP;
-        private Label _lblSessionHigh;
-        private Label _lblTrailHalf;
-        private Label _lblTrailAll;
+        private Label _lblATR = null!;
+        private Label _lblEMA = null!;
+        private Label _lblVWAP = null!;
+        private Label _lblSessionHigh = null!;
+        private Label _lblTrailHalf = null!;
+        private Label _lblTrailAll = null!;
 
         // 控制区 - VWAP
-        private TextBox _txtInitialVwap;
-        private Button _btnResetVwap;
+        private TextBox _txtInitialVwap = null!;
+        private Button _btnResetVwap = null!;
 
         // 控制区 - Strategy
-        private TextBox _txtTriggerPrice;
-        private Button _btnOpen;       // 没有持仓时显示
-        private Button _btnAddAll;     // 有持仓时显示
-        private Button _btnAddHalf;    // 有持仓时显示
-        private Button _btnStopStrategy;
+        private TextBox _txtTriggerPrice = null!;
+        private Button _btnOpen = null!;       // 没有持仓时显示
+        private Button _btnAddAll = null!;     // 有持仓时显示
+        private Button _btnAddHalf = null!;    // 有持仓时显示
+        private Button _btnStopStrategy = null!;
 
         // 控制区 - Session High
-        private TextBox _txtSessionHigh;
-        private Button _btnResetSessionHigh;
+        private TextBox _txtSessionHigh = null!;
+        private Button _btnResetSessionHigh = null!;
 
         // Agent Mode
-        private Label _lblAgentPrice;
-        private Button _btnAgentMode;
-        private Label _lblBreakedLevel;
-        private TextBox _txtBreakedLevel;
-        private Button _btnResetBreakedLevel;
+        private Label _lblAgentPrice = null!;
+        private Button _btnAgentMode = null!;
+        private Label _lblBreakedLevel = null!;
+        private TextBox _txtBreakedLevel = null!;
+        private Button _btnResetBreakedLevel = null!;
+
+        // TrailingStop 手动设置
+        private Label _lblTrailHalfSet = null!;
+        private TextBox _txtTrailHalf = null!;
+        private Button _btnSetTrailHalf = null!;
+        private Button _btnStartTrailing = null!;  // Start/On 按钮
+        private Label _lblTrailAllSet = null!;
+        private TextBox _txtTrailAll = null!;
+        private Button _btnSetTrailAll = null!;
 
         // AutoFill 快捷按钮
-        private Button _btnAutoFill1;  // CeilLevel(tick)
-        private Button _btnAutoFill2;  // CeilLevel(tick) + 0.5
-        private Button _btnAutoFill3;  // CeilLevel(sessionHigh)
+        private Button _btnAutoFill1 = null!;  // CeilLevel(tick)
+        private Button _btnAutoFill2 = null!;  // CeilLevel(tick) + 0.5
+        private Button _btnAutoFill3 = null!;  // CeilLevel(sessionHigh)
+        private Button _btnAutoFill4 = null!;  // SessionHigh - 0.01
+
+        // HighBreakout 策略
+        private Label _lblHighBreakout = null!;
+        private TextBox _txtHighBreakoutPrice = null!;
+        private Button _btnHighBreakoutOpen = null!;
+        private Button _btnHBAutoFill1 = null!;  // SessionHigh - 0.01
+        private Button _btnHBAutoFill2 = null!;  // FloorLevel(SessionHigh)
 
         public WorkingZonePanel(TradingController controller) : base(controller)
         {
-            this.Height = 200;
+            this.Height = 220;
             this.Dock = DockStyle.Top;
             BuildUI();
             BindEvents();
@@ -228,6 +246,16 @@ namespace TradingEngine.UI
             };
             _btnAutoFill3.Click += (s, e) => AutoFillTriggerPrice(_btnAutoFill3.Text);
 
+            _btnAutoFill4 = new Button
+            {
+                Text = "--",
+                Location = new Point(244, 132),
+                Size = new Size(50, 22),
+                Font = new Font("Consolas", 8),
+                FlatStyle = FlatStyle.Flat
+            };
+            _btnAutoFill4.Click += (s, e) => AutoFillTriggerPrice(_btnAutoFill4.Text);
+
             // Session High 控制
             var lblSessionHighCtrl = new Label
             {
@@ -293,6 +321,110 @@ namespace TradingEngine.UI
             };
             _btnResetBreakedLevel.Click += BtnResetBreakedLevel_Click;
 
+            // TrailHalf 控件（BrkLv 下方）
+            _lblTrailHalfSet = new Label
+            {
+                Text = "TrlHalf:",
+                Location = new Point(450, 160),
+                Font = new Font("Consolas", 9),
+                AutoSize = true
+            };
+
+            _txtTrailHalf = new TextBox
+            {
+                Location = new Point(510, 157),
+                Size = new Size(50, 22),
+                Font = new Font("Consolas", 9)
+            };
+            _txtTrailHalf.KeyDown += TxtTrailHalf_KeyDown;
+
+            _btnSetTrailHalf = new Button
+            {
+                Text = "Set",
+                Location = new Point(565, 155),
+                Size = new Size(40, 25)
+            };
+            _btnSetTrailHalf.Click += BtnSetTrailHalf_Click;
+
+            _btnStartTrailing = new Button
+            {
+                Text = "Start",
+                Location = new Point(610, 155),
+                Size = new Size(45, 25),
+                Enabled = false
+            };
+            _btnStartTrailing.Click += BtnStartTrailing_Click;
+
+            // TrailAll 控件（TrailHalf 下方）
+            _lblTrailAllSet = new Label
+            {
+                Text = "TrlAll:",
+                Location = new Point(450, 185),
+                Font = new Font("Consolas", 9),
+                AutoSize = true
+            };
+
+            _txtTrailAll = new TextBox
+            {
+                Location = new Point(510, 182),
+                Size = new Size(50, 22),
+                Font = new Font("Consolas", 9)
+            };
+            _txtTrailAll.KeyDown += TxtTrailAll_KeyDown;
+
+            _btnSetTrailAll = new Button
+            {
+                Text = "Set",
+                Location = new Point(565, 180),
+                Size = new Size(40, 25)
+            };
+            _btnSetTrailAll.Click += BtnSetTrailAll_Click;
+
+            // HighBreakout 策略控件（SessionHigh 下方）
+            _lblHighBreakout = new Label
+            {
+                Text = "HiBrk:",
+                Location = new Point(10, 185),
+                Font = new Font("Consolas", 9),
+                AutoSize = true
+            };
+
+            _txtHighBreakoutPrice = new TextBox
+            {
+                Location = new Point(60, 182),
+                Size = new Size(60, 22),
+                Font = new Font("Consolas", 9)
+            };
+            _txtHighBreakoutPrice.KeyDown += TxtHighBreakoutPrice_KeyDown;
+
+            _btnHighBreakoutOpen = new Button
+            {
+                Text = "Open",
+                Location = new Point(125, 180),
+                Size = new Size(50, 25)
+            };
+            _btnHighBreakoutOpen.Click += BtnHighBreakoutOpen_Click;
+
+            _btnHBAutoFill1 = new Button
+            {
+                Text = "--",
+                Location = new Point(180, 180),
+                Size = new Size(55, 25),
+                Font = new Font("Consolas", 8),
+                FlatStyle = FlatStyle.Flat
+            };
+            _btnHBAutoFill1.Click += (s, e) => AutoFillHighBreakoutPrice(_btnHBAutoFill1.Text);
+
+            _btnHBAutoFill2 = new Button
+            {
+                Text = "--",
+                Location = new Point(238, 180),
+                Size = new Size(45, 25),
+                Font = new Font("Consolas", 8),
+                FlatStyle = FlatStyle.Flat
+            };
+            _btnHBAutoFill2.Click += (s, e) => AutoFillHighBreakoutPrice(_btnHBAutoFill2.Text);
+
             // 添加控件
             this.Controls.Add(lblTitle);
             this.Controls.Add(_lblATR);
@@ -314,6 +446,12 @@ namespace TradingEngine.UI
             this.Controls.Add(_btnAutoFill1);
             this.Controls.Add(_btnAutoFill2);
             this.Controls.Add(_btnAutoFill3);
+            this.Controls.Add(_btnAutoFill4);
+            this.Controls.Add(_lblHighBreakout);
+            this.Controls.Add(_txtHighBreakoutPrice);
+            this.Controls.Add(_btnHighBreakoutOpen);
+            this.Controls.Add(_btnHBAutoFill1);
+            this.Controls.Add(_btnHBAutoFill2);
             this.Controls.Add(lblSessionHighCtrl);
             this.Controls.Add(_txtSessionHigh);
             this.Controls.Add(_btnResetSessionHigh);
@@ -322,6 +460,13 @@ namespace TradingEngine.UI
             this.Controls.Add(_lblBreakedLevel);
             this.Controls.Add(_txtBreakedLevel);
             this.Controls.Add(_btnResetBreakedLevel);
+            this.Controls.Add(_lblTrailHalfSet);
+            this.Controls.Add(_txtTrailHalf);
+            this.Controls.Add(_btnSetTrailHalf);
+            this.Controls.Add(_btnStartTrailing);
+            this.Controls.Add(_lblTrailAllSet);
+            this.Controls.Add(_txtTrailAll);
+            this.Controls.Add(_btnSetTrailAll);
         }
 
         private void BindEvents()
@@ -344,6 +489,7 @@ namespace TradingEngine.UI
             {
                 _lblSessionHigh.Text = high > 0 ? $"SHigh: {high:F3}" : "SHigh: --";
                 UpdateAutoFillButtons();
+                UpdateHighBreakoutButtons();
             });
 
             // EMA20 穿越 - 更新颜色
@@ -370,6 +516,9 @@ namespace TradingEngine.UI
             {
                 _lblTrailHalf.Text = trailHalf > 0 ? $"Trail½: {trailHalf:F3}" : "Trail½: --";
                 _lblTrailAll.Text = trailAll > 0 ? $"TrailAll: {trailAll:F3}" : "TrailAll: --";
+                _txtTrailHalf.Text = trailHalf > 0 ? trailHalf.ToString("F3") : "";
+                _txtTrailAll.Text = trailAll > 0 ? trailAll.ToString("F3") : "";
+                UpdateTrailingButton();
             });
 
             // Agent TriggerPrice 更新
@@ -389,6 +538,7 @@ namespace TradingEngine.UI
             {
                 UpdateStrategyButtons();
                 UpdateAgentButton();
+                UpdateTrailingButton();
             });
 
             // ActiveSymbol 切换
@@ -405,6 +555,8 @@ namespace TradingEngine.UI
                     _lblAgentPrice.Text = "Agent: --";
                     _lblBreakedLevel.Text = "BrkLv: --";
                     _txtBreakedLevel.Text = "";
+                    _txtTrailHalf.Text = "";
+                    _txtTrailAll.Text = "";
                     _lblEMA.ForeColor = SystemColors.ControlText;
                     _lblVWAP.ForeColor = SystemColors.ControlText;
                 }
@@ -426,6 +578,8 @@ namespace TradingEngine.UI
                         _lblSessionHigh.Text = state.SessionHigh > 0 ? $"SHigh: {state.SessionHigh:F3}" : "SHigh: --";
                         _lblTrailHalf.Text = state.TrailHalf > 0 ? $"Trail½: {state.TrailHalf:F3}" : "Trail½: --";
                         _lblTrailAll.Text = state.TrailAll > 0 ? $"TrailAll: {state.TrailAll:F3}" : "TrailAll: --";
+                        _txtTrailHalf.Text = state.TrailHalf > 0 ? state.TrailHalf.ToString("F3") : "";
+                        _txtTrailAll.Text = state.TrailAll > 0 ? state.TrailAll.ToString("F3") : "";
                         _lblAgentPrice.Text = state.AgentTriggerPrice > 0 ? $"Agent: {state.AgentTriggerPrice:F2}" : "Agent: --";
                         _lblBreakedLevel.Text = state.AgentBreakedLevel > 0 ? $"BrkLv: {state.AgentBreakedLevel:F2}" : "BrkLv: --";
                         _txtBreakedLevel.Text = state.AgentBreakedLevel > 0 ? state.AgentBreakedLevel.ToString("F2") : "";
@@ -440,6 +594,8 @@ namespace TradingEngine.UI
                         _lblSessionHigh.Text = "SHigh: --";
                         _lblTrailHalf.Text = "Trail½: --";
                         _lblTrailAll.Text = "TrailAll: --";
+                        _txtTrailHalf.Text = "";
+                        _txtTrailAll.Text = "";
                         _lblAgentPrice.Text = "Agent: --";
                         _lblBreakedLevel.Text = "BrkLv: --";
                         _txtBreakedLevel.Text = "";
@@ -450,6 +606,8 @@ namespace TradingEngine.UI
                 UpdateStrategyButtons();
                 UpdateAgentButton();
                 UpdateAutoFillButtons();
+                UpdateHighBreakoutButtons();
+                UpdateTrailingButton();
             });
         }
 
@@ -569,6 +727,138 @@ namespace TradingEngine.UI
             Controller.LogMessage($"BreakedLevel set to {newLevel:F2}");
         }
 
+        #region TrailingStop Manual Set
+
+        private void TxtTrailHalf_KeyDown(object? sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Enter)
+            {
+                SetTrailHalf();
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+            }
+        }
+
+        private void BtnSetTrailHalf_Click(object? sender, EventArgs e)
+        {
+            SetTrailHalf();
+        }
+
+        private void SetTrailHalf()
+        {
+            string? symbol = Controller.ActiveSymbol;
+            if (string.IsNullOrEmpty(symbol))
+            {
+                Controller.LogMessage("No symbol selected");
+                return;
+            }
+
+            if (!double.TryParse(_txtTrailHalf.Text, out double newValue) || newValue <= 0)
+            {
+                Controller.LogMessage("Invalid TrailHalf value");
+                return;
+            }
+
+            Controller.SetTrailHalf(symbol, newValue);
+            _lblTrailHalf.Text = $"Trail½: {newValue:F3}";
+
+            // SetTrailHalf 会自动计算 TrailAll，更新显示
+            var state = Controller.GetSymbolState(symbol);
+            if (state != null)
+            {
+                _lblTrailAll.Text = $"TrailAll: {state.TrailAll:F3}";
+                _txtTrailAll.Text = state.TrailAll.ToString("F3");
+            }
+
+            Controller.LogMessage($"TrailHalf set to {newValue:F3}");
+        }
+
+        private void TxtTrailAll_KeyDown(object? sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Enter)
+            {
+                SetTrailAll();
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+            }
+        }
+
+        private void BtnSetTrailAll_Click(object? sender, EventArgs e)
+        {
+            SetTrailAll();
+        }
+
+        private void SetTrailAll()
+        {
+            string? symbol = Controller.ActiveSymbol;
+            if (string.IsNullOrEmpty(symbol))
+            {
+                Controller.LogMessage("No symbol selected");
+                return;
+            }
+
+            if (!double.TryParse(_txtTrailAll.Text, out double newValue) || newValue <= 0)
+            {
+                Controller.LogMessage("Invalid TrailAll value");
+                return;
+            }
+
+            Controller.SetTrailAll(symbol, newValue);
+            _lblTrailAll.Text = $"TrailAll: {newValue:F3}";
+            Controller.LogMessage($"TrailAll set to {newValue:F3}");
+        }
+
+        private void BtnStartTrailing_Click(object? sender, EventArgs e)
+        {
+            string? symbol = Controller.ActiveSymbol;
+            if (string.IsNullOrEmpty(symbol)) return;
+
+            Controller.ToggleTrailingStop(symbol);
+            UpdateTrailingButton();
+        }
+
+        private void UpdateTrailingButton()
+        {
+            string? symbol = Controller.ActiveSymbol;
+            if (string.IsNullOrEmpty(symbol))
+            {
+                _btnStartTrailing.Text = "Start";
+                _btnStartTrailing.Enabled = false;
+                return;
+            }
+
+            var state = Controller.GetSymbolState(symbol);
+            var position = Controller.GetPosition(symbol);
+            bool hasPosition = position != null && position.Quantity > 0;
+
+            if (!hasPosition)
+            {
+                // 无持仓
+                _btnStartTrailing.Text = "Start";
+                _btnStartTrailing.Enabled = false;
+            }
+            else if (state == null || state.TrailHalf <= 0)
+            {
+                // 有持仓但还没计算 TrailHalf（等待第一根 bar）
+                _btnStartTrailing.Text = "Start";
+                _btnStartTrailing.Enabled = false;
+            }
+            else if (state.TrailingStopActive)
+            {
+                // 已激活 → 可以点击停止
+                _btnStartTrailing.Text = "Stop";
+                _btnStartTrailing.Enabled = true;
+            }
+            else
+            {
+                // 有持仓 + 有数据 + 未激活 → 可以点击启动
+                _btnStartTrailing.Text = "Start";
+                _btnStartTrailing.Enabled = true;
+            }
+        }
+
+        #endregion
+
         #region AutoFill
 
         private void UpdateAutoFillButtons()
@@ -579,6 +869,11 @@ namespace TradingEngine.UI
             _btnAutoFill1.Text = ceil1 > 0 ? ceil1.ToString("F1") : "--";
             _btnAutoFill2.Text = ceil2 > 0 ? ceil2.ToString("F1") : "--";
             _btnAutoFill3.Text = ceilSessionHigh > 0 ? ceilSessionHigh.ToString("F1") : "--";
+
+            // SessionHigh - 0.01
+            var state = Controller.GetSymbolState(symbol);
+            double sessionHighMinus = state?.SessionHigh > 0 ? state.SessionHigh - 0.01 : 0;
+            _btnAutoFill4.Text = sessionHighMinus > 0 ? sessionHighMinus.ToString("F2") : "--";
         }
 
         private void AutoFillTriggerPrice(string priceText)
@@ -591,6 +886,69 @@ namespace TradingEngine.UI
 
             _txtTriggerPrice.Text = price.ToString("F2");
             Controller.AutoFillOpen(symbol, price);
+        }
+
+        #endregion
+
+        #region HighBreakout
+
+        private void UpdateHighBreakoutButtons()
+        {
+            string symbol = Controller.ActiveSymbol ?? "";
+            var state = Controller.GetSymbolState(symbol);
+
+            // SessionHigh - 0.01
+            double sessionHighMinus = state?.SessionHigh > 0 ? state.SessionHigh - 0.01 : 0;
+            _btnHBAutoFill1.Text = sessionHighMinus > 0 ? sessionHighMinus.ToString("F2") : "--";
+
+            // FloorLevel(SessionHigh)
+            double floorSessionHigh = state?.SessionHigh > 0 ? AgentStrategy.FloorLevel(state.SessionHigh) : 0;
+            _btnHBAutoFill2.Text = floorSessionHigh > 0 ? floorSessionHigh.ToString("F1") : "--";
+        }
+
+        private void AutoFillHighBreakoutPrice(string priceText)
+        {
+            if (priceText == "--") return;
+            if (!double.TryParse(priceText, out double price)) return;
+
+            string? symbol = Controller.ActiveSymbol;
+            if (string.IsNullOrEmpty(symbol)) return;
+
+            _txtHighBreakoutPrice.Text = price.ToString("F2");
+            Controller.StartHighBreakout(symbol, price);
+        }
+
+        private void TxtHighBreakoutPrice_KeyDown(object? sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Enter)
+            {
+                StartHighBreakout();
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+            }
+        }
+
+        private void BtnHighBreakoutOpen_Click(object? sender, EventArgs e)
+        {
+            StartHighBreakout();
+        }
+
+        private void StartHighBreakout()
+        {
+            string? symbol = Controller.ActiveSymbol;
+            if (string.IsNullOrEmpty(symbol))
+            {
+                Controller.LogMessage("No symbol selected");
+                return;
+            }
+
+            if (!double.TryParse(_txtHighBreakoutPrice.Text.Trim(), out double triggerPrice) || triggerPrice <= 0)
+            {
+                Controller.LogMessage("Invalid HighBreakout trigger price");
+                return;
+            }
+
+            Controller.StartHighBreakout(symbol, triggerPrice);
         }
 
         #endregion

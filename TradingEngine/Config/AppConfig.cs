@@ -19,6 +19,8 @@ namespace TradingEngine.Config
         public double SingleStockBPMultiplier { get; set; } = 3.0;  // 单股票 BP = Equity × 此值
         public int MaxSharesPerSymbol { get; set; } = 10000;        // 单股票最大持股数
         public double MinRiskPerShare { get; set; } = 0.05;          // 最小每股风险（Ask - Stop）
+        public double MinTrailAll { get; set; } = 0.2;               // TrailAll 最小值
+        public int MinStopVolume { get; set; } = 50;                 // 触发止损前最小累计成交量
         public string BuyRoute { get; set; } = "VLCTL";
         public string SellRoute { get; set; } = "VLCTL";
         public string StopRoute { get; set; } = "STOP";

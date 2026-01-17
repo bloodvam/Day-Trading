@@ -77,9 +77,11 @@ namespace TradingEngine.UI
                     break;
                 case LogPanelType.Strategy:
                     Controller.StrategyLog += (msg) => InvokeUI(() => OnLogMessage(msg));
+                    Controller.StrategyLogWithColor += (msg, color) => InvokeUI(() => AppendSymbolLog(msg, color));
                     break;
                 case LogPanelType.Agent:
                     Controller.AgentLog += (msg) => InvokeUI(() => OnLogMessage(msg));
+                    Controller.AgentLogWithColor += (msg, color) => InvokeUI(() => AppendSymbolLog(msg, color));
                     break;
             }
         }
@@ -126,6 +128,9 @@ namespace TradingEngine.UI
 
         private void OnNewOperationStarted()
         {
+            // 只有 Order Log 需要清空
+            if (_panelType != LogPanelType.Order) return;
+
             var symbol = Controller.ActiveSymbol;
             if (!string.IsNullOrEmpty(symbol))
             {

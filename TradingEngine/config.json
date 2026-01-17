@@ -7,11 +7,11 @@
         "Account": "TR19201"
     },
     "Trading": {
-        "RiskAmount": 10.0,
+        "RiskAmount": 20.0,
         "SpreadPercent": 0.03,
         "Leverage": 6.0,
-        "BuyRoute": "VLCTL",
-        "SellRoute": "VLCTL",
+        "BuyRoute": "VLCT",
+        "SellRoute": "VLCT",
         "StopRoute": "STOP",
         "DefaultBarInterval": 5
     }

@@ -1,6 +1,7 @@
 ﻿using TradingEngine.Models;
 using TradingEngine.Utils;
 using TradingEngine.Config;
+using System.Drawing;
 
 namespace TradingEngine.Managers
 {
@@ -16,6 +17,8 @@ namespace TradingEngine.Managers
         private readonly AccountManager _accountManager;
 
         public event Action<string>? Log;
+        public event Action<string, Color>? LogWithColor;  // 带颜色的日志（打印到 Strategy Log）
+        public event Action<string, Color>? TrailingStopLog;  // 带颜色的日志（打印到 Agent Log）
         public event Action<string, double, double>? TrailingStopUpdated;  // symbol, trailHalf, trailAll
         public event Action<string>? BuyTriggered;  // 实际发送买单时触发（symbol）
         public event Action<Tick>? ValidTickReceived;  // 有效 tick（供 AgentStrategy 使用）
@@ -66,8 +69,28 @@ namespace TradingEngine.Managers
             state.HasTriggeredSell = false;
             state.PositionMode = AddPositionMode.Open;
             state.StopPrice = 0;
+            state.IsHighBreakout = false;
 
             Log?.Invoke($"[Strategy] Open started for {symbol}: TriggerPrice={triggerPrice:F3}");
+        }
+
+        /// <summary>
+        /// 高点突破策略（止损只用 barLow - 0.01）
+        /// </summary>
+        public void StartHighBreakout(string symbol, double triggerPrice)
+        {
+            var state = _dataManager.Get(symbol);
+            if (state == null) return;
+
+            state.TriggerPrice = triggerPrice;
+            state.StrategyEnabled = true;
+            state.HasTriggeredBuy = false;
+            state.HasTriggeredSell = false;
+            state.PositionMode = AddPositionMode.Open;
+            state.StopPrice = 0;
+            state.IsHighBreakout = true;
+
+            Log?.Invoke($"[Strategy] HighBreakout started for {symbol}: TriggerPrice={triggerPrice:F3}");
         }
 
         /// <summary>
@@ -156,18 +179,21 @@ namespace TradingEngine.Managers
             var state = _dataManager.Get(bar.Symbol);
             if (state == null) return;
 
+            // 每根 bar 结束重置止损累计量
+            state.StopVolumeAccumulated = 0;
+
             // 只有有持仓时才处理
             var position = _accountManager.GetPosition(bar.Symbol);
             if (position == null || position.Quantity <= 0) return;
 
-            // 如果还没激活，激活它
-            if (!state.TrailingStopActive)
+            // 数据还没准备好，准备数据
+            if (state.TrailHalf <= 0)
             {
                 ActivateTrailingStop(state, bar);
                 return;
             }
 
-            // 已激活的 Trailing Stop，更新 bar ranges
+            // 数据已准备好，累积更新（无论是否点了 Start）
             double range = bar.High - bar.Low;
 
             // 如果是同一个 bar，更新；否则添加
@@ -189,13 +215,13 @@ namespace TradingEngine.Managers
             // 只有变化时才打印日志
             if (Math.Abs(state.TrailHalf - oldTrailHalf) > 0.0001 || Math.Abs(state.TrailAll - oldTrailAll) > 0.0001)
             {
-                Log?.Invoke($"[TrailingStop] {bar.Symbol} Updated: Range={range:F3}, TrailHalf={state.TrailHalf:F3}, TrailAll={state.TrailAll:F3}");
+                TrailingStopLog?.Invoke($"[TrailingStop] {bar.Symbol} Updated: Range={range:F3}, TrailHalf={state.TrailHalf:F3}, TrailAll={state.TrailAll:F3}", Color.Black);
                 TrailingStopUpdated?.Invoke(bar.Symbol, state.TrailHalf, state.TrailAll);
             }
         }
 
         /// <summary>
-        /// 激活 Trailing Stop（买入那根 bar 完成时调用）
+        /// 准备 Trailing Stop 数据（买入那根 bar 完成时调用，但不激活）
         /// </summary>
         private void ActivateTrailingStop(SymbolState state, Bar completedBar)
         {
@@ -216,10 +242,74 @@ namespace TradingEngine.Managers
             // 初始化最高价为刚完成的 bar 的 High
             state.TrailingSinceHigh = completedBar.High;
             state.LastBarTime = completedBar.Time;
-            state.TrailingStopActive = true;
+            // 不设置 TrailingStopActive = true，等用户手动点 Start
 
-            Log?.Invoke($"[TrailingStop] {state.Symbol} Activated: BarCount={state.BarRanges.Count}, TrailHalf={state.TrailHalf:F3}, TrailAll={state.TrailAll:F3}, High={state.TrailingSinceHigh:F3}");
+            TrailingStopLog?.Invoke($"[TrailingStop] {state.Symbol} Ready: BarCount={state.BarRanges.Count}, TrailHalf={state.TrailHalf:F3}, TrailAll={state.TrailAll:F3}, High={state.TrailingSinceHigh:F3}", Color.Black);
             TrailingStopUpdated?.Invoke(state.Symbol, state.TrailHalf, state.TrailAll);
+        }
+
+        /// <summary>
+        /// 手动启动 Trailing Stop
+        /// </summary>
+        public void StartTrailingStop(string symbol)
+        {
+            var state = _dataManager.Get(symbol);
+            if (state == null) return;
+
+            // 必须有 TrailHalf 数据
+            if (state.TrailHalf <= 0)
+            {
+                Log?.Invoke($"[TrailingStop] {symbol} Cannot start: TrailHalf not ready");
+                return;
+            }
+
+            // 已经激活
+            if (state.TrailingStopActive)
+            {
+                Log?.Invoke($"[TrailingStop] {symbol} Already active");
+                return;
+            }
+
+            state.TrailingStopActive = true;
+            TrailingStopLog?.Invoke($"[TrailingStop] {symbol} Started! TrailHalf={state.TrailHalf:F3}, TrailAll={state.TrailAll:F3}, High={state.TrailingSinceHigh:F3}", Color.Black);
+        }
+
+        /// <summary>
+        /// 手动停止 Trailing Stop
+        /// </summary>
+        public void StopTrailingStop(string symbol)
+        {
+            var state = _dataManager.Get(symbol);
+            if (state == null) return;
+
+            if (!state.TrailingStopActive)
+            {
+                Log?.Invoke($"[TrailingStop] {symbol} Not active");
+                return;
+            }
+
+            state.TrailingStopActive = false;
+            TrailingStopLog?.Invoke($"[TrailingStop] {symbol} Stopped", Color.Black);
+        }
+
+        /// <summary>
+        /// 切换 Trailing Stop 状态
+        /// </summary>
+        public bool ToggleTrailingStop(string symbol)
+        {
+            var state = _dataManager.Get(symbol);
+            if (state == null) return false;
+
+            if (state.TrailingStopActive)
+            {
+                StopTrailingStop(symbol);
+                return false;
+            }
+            else
+            {
+                StartTrailingStop(symbol);
+                return state.TrailingStopActive;
+            }
         }
 
         /// <summary>
@@ -228,6 +318,8 @@ namespace TradingEngine.Managers
         private void UpdateTrailHalf(SymbolState state)
         {
             if (state.BarRanges.Count == 0) return;
+
+            var config = AppConfig.Instance.Trading;
 
             if (state.BarRanges.Count == 1)
             {
@@ -241,7 +333,7 @@ namespace TradingEngine.Managers
                 state.TrailHalf = sorted[1];
             }
 
-            state.TrailAll = state.TrailHalf * 1.25;
+            state.TrailAll = Math.Max(state.TrailHalf * 1.25, config.MinTrailAll);
         }
 
         /// <summary>
@@ -265,7 +357,7 @@ namespace TradingEngine.Managers
                 if (oldHigh > 0 && state.HasTriggeredTrailHalf)
                 {
                     state.HasTriggeredTrailHalf = false;
-                    Log?.Invoke($"[TrailingStop] {state.Symbol} New high {tick.Price:F3}, reset TrailHalf trigger");
+                    TrailingStopLog?.Invoke($"[TrailingStop] {state.Symbol} New high {tick.Price:F3}, reset TrailHalf trigger", Color.Black);
                 }
             }
         }
@@ -297,11 +389,22 @@ namespace TradingEngine.Managers
             // 条件5: tick.Price >= TriggerPrice
             if (tick.Price < state.TriggerPrice) return;
 
-            // 计算 StopPrice = Max(barLow, triggerPrice - 0.51)
+            // 计算 StopPrice
             var currentBar = _barAggregator.GetCurrentBar(state.Symbol);
             double barLow = currentBar?.Low ?? 0;
-            double triggerStop = state.TriggerPrice - 0.51;
-            double newStopPrice = Math.Max(barLow, triggerStop);
+            double newStopPrice;
+
+            if (state.IsHighBreakout)
+            {
+                // 高点突破策略：只用 barLow - 0.01
+                newStopPrice = barLow - 0.01;
+            }
+            else
+            {
+                // 普通策略：Max(barLow - 0.01, triggerPrice - 0.51)
+                double triggerStop = state.TriggerPrice - 0.51;
+                newStopPrice = Math.Max(barLow - 0.01, triggerStop);
+            }
 
             // 检查最小风险限制，如果 ask - stop < MinRiskPerShare，自动调低止损价
             var config = AppConfig.Instance.Trading;
@@ -328,7 +431,7 @@ namespace TradingEngine.Managers
                         // 初始化 Trailing Stop 状态
                         InitTrailingStop(state);
 
-                        Log?.Invoke($"[Strategy] {state.Symbol} OPEN triggered! Ask={ask:F3} >= Trigger={state.TriggerPrice:F3}, StopPrice={newStopPrice:F3}");
+                        LogWithColor?.Invoke($"[Strategy] {state.Symbol} OPEN triggered! Ask={ask:F3} >= Trigger={state.TriggerPrice:F3}, StopPrice={newStopPrice:F3}", Color.DarkGreen);
                         await _orderManager.BuyOneR(newStopPrice);
                         break;
 
@@ -336,7 +439,7 @@ namespace TradingEngine.Managers
                     case AddPositionMode.AddHalf:
                         double riskFactor = state.PositionMode == AddPositionMode.AddAll ? 1.0 : 0.5;
                         string modeStr = state.PositionMode == AddPositionMode.AddAll ? "All" : "1/2";
-                        Log?.Invoke($"[Strategy] {state.Symbol} ADD {modeStr} triggered! Ask={ask:F3} >= Trigger={state.TriggerPrice:F3}, NewStopPrice={newStopPrice:F3}");
+                        LogWithColor?.Invoke($"[Strategy] {state.Symbol} ADD {modeStr} triggered! Ask={ask:F3} >= Trigger={state.TriggerPrice:F3}, NewStopPrice={newStopPrice:F3}", Color.DarkGreen);
                         await _orderManager.AddPosition(newStopPrice, riskFactor);
                         break;
                 }
@@ -387,13 +490,30 @@ namespace TradingEngine.Managers
             // 条件6: tick.Price < StopPrice
             if (tick.Price >= state.StopPrice) return;
 
+            // 条件7: 累计成交量 > MinStopVolume
+            var config = AppConfig.Instance.Trading;
+            state.StopVolumeAccumulated += tick.Volume;
+            if (state.StopVolumeAccumulated <= config.MinStopVolume) return;
+
             // 触发卖出
             state.HasTriggeredSell = true;
-            Log?.Invoke($"[Strategy] {state.Symbol} STOP LOSS triggered! Bid={bid:F3} < StopPrice={state.StopPrice:F3}, TickPrice={tick.Price:F3}");
+
+            // 判断卖出数量：TrailSellHalf 已触发时只卖剩余
+            int sharesToSell = state.RemainingShares > 0 ? state.RemainingShares : 0;
+            string sellType = sharesToSell > 0 ? $"SellShares({sharesToSell})" : "SellAll";
+
+            LogWithColor?.Invoke($"[Strategy] {state.Symbol} STOP LOSS triggered! Bid={bid:F3} < StopPrice={state.StopPrice:F3}, TickPrice={tick.Price:F3}, {sellType}", Color.Red);
 
             try
             {
-                await _orderManager.SellAll();
+                if (sharesToSell > 0)
+                {
+                    await _orderManager.SellShares(sharesToSell);
+                }
+                else
+                {
+                    await _orderManager.SellAll();
+                }
 
                 // 全部清仓后清除状态
                 state.ClearStrategyState();
@@ -408,6 +528,9 @@ namespace TradingEngine.Managers
 
         private async void CheckTrailingStopCondition(SymbolState state, Tick tick)
         {
+            // 条件0: 还没触发过卖出（避免和 StopLoss 重复卖出）
+            if (state.HasTriggeredSell) return;
+
             // 条件1: Trailing Stop 已激活
             if (!state.TrailingStopActive) return;
 
@@ -429,7 +552,10 @@ namespace TradingEngine.Managers
                     ? state.RemainingShares
                     : position.Quantity;
 
-                Log?.Invoke($"[TrailingStop] {state.Symbol} SELL ALL triggered! Bid={bid:F3} < SellAllPrice={sellAllPrice:F3}, Shares={sharesToSell}");
+                // 标记已触发卖出（防止 StopLoss 重复卖出）
+                state.HasTriggeredSell = true;
+
+                TrailingStopLog?.Invoke($"[TrailingStop] {state.Symbol} SELL ALL triggered! Bid={bid:F3} < SellAllPrice={sellAllPrice:F3}, Shares={sharesToSell}", Color.Blue);
 
                 try
                 {
@@ -441,7 +567,8 @@ namespace TradingEngine.Managers
                 }
                 catch (Exception ex)
                 {
-                    Log?.Invoke($"[TrailingStop] {state.Symbol} SellAll failed: {ex.Message}");
+                    TrailingStopLog?.Invoke($"[TrailingStop] {state.Symbol} SellAll failed: {ex.Message}", Color.Red);
+                    state.HasTriggeredSell = false;  // 失败时重置
                 }
                 return;
             }
@@ -458,7 +585,7 @@ namespace TradingEngine.Managers
                     int sellShares = position.Quantity / 2;
                     state.RemainingShares = position.Quantity - sellShares;
 
-                    Log?.Invoke($"[TrailingStop] {state.Symbol} SELL HALF triggered! Bid={bid:F3} < SellHalfPrice={sellHalfPrice:F3}, Sell={sellShares}, Remaining={state.RemainingShares}");
+                    TrailingStopLog?.Invoke($"[TrailingStop] {state.Symbol} SELL HALF triggered! Bid={bid:F3} < SellHalfPrice={sellHalfPrice:F3}, Sell={sellShares}, Remaining={state.RemainingShares}", Color.DarkGoldenrod);
 
                     try
                     {
@@ -466,7 +593,7 @@ namespace TradingEngine.Managers
                     }
                     catch (Exception ex)
                     {
-                        Log?.Invoke($"[TrailingStop] {state.Symbol} SellHalf failed: {ex.Message}");
+                        TrailingStopLog?.Invoke($"[TrailingStop] {state.Symbol} SellHalf failed: {ex.Message}", Color.Red);
                         state.HasTriggeredTrailHalf = false;
                         state.RemainingShares = 0;
                     }

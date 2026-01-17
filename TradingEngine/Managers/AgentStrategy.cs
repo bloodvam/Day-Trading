@@ -222,6 +222,9 @@ namespace TradingEngine.Managers
 
             double sessionHighLevel = FloorLevel(sessionHigh);
 
+            // 保存旧的 TriggerPrice（触发检测用，避免时序问题）
+            double previousTriggerPrice = state.AgentTriggerPrice;
+
             // ========== 计算下一个预期入场价格（每个 tick 都计算） ==========
             double nextTriggerPrice;
             if (state.AgentBreakedLevel + 0.5 < sessionHighLevel)
@@ -235,21 +238,14 @@ namespace TradingEngine.Managers
                 nextTriggerPrice = sessionHighLevel + 0.5;
             }
 
-            // 更新 UI
+            // 更新 AgentTriggerPrice（UI 显示用）
             if (Math.Abs(state.AgentTriggerPrice - nextTriggerPrice) > 0.001)
             {
                 state.AgentTriggerPrice = nextTriggerPrice;
                 triggerPriceForUI = nextTriggerPrice;
-
-                // 如果 Agent 启用，同步更新实际的 TriggerPrice
-                if (state.AgentEnabled)
-                {
-                    state.TriggerPrice = nextTriggerPrice;
-                    Log?.Invoke($"[Agent] {state.Symbol} TriggerPrice updated: {nextTriggerPrice:F2}");
-                }
             }
 
-            // ========== 检测上穿，触发买入 ==========
+            // ========== 检测上穿/下穿 ==========
             double currentLevel = FloorLevel(price);
             double previousLevel = FloorLevel(state.AgentPreviousPrice);
 
@@ -258,7 +254,7 @@ namespace TradingEngine.Managers
 
             if (price > state.AgentPreviousPrice)
             {
-                if (state.AgentPreviousPrice < currentLevel && price >= currentLevel)
+                if (state.AgentPreviousPrice <= currentLevel && price > currentLevel)
                 {
                     crossedUp = true;
                     ceilLevelForUI = CeilLevel(price);  // 上穿时更新
@@ -273,14 +269,25 @@ namespace TradingEngine.Managers
                 }
             }
 
+            // ========== 上穿或下穿时，检查是否更新 state.TriggerPrice ==========
+            if ((crossedUp || crossedDown) && state.AgentEnabled && state.TriggerPrice > 0)
+            {
+                // 只有新的 TriggerPrice 比当前小时才更新（跟随市场调低）
+                if (nextTriggerPrice < state.TriggerPrice)
+                {
+                    state.TriggerPrice = nextTriggerPrice;
+                    Log?.Invoke($"[Agent] {state.Symbol} TriggerPrice updated: {nextTriggerPrice:F2}");
+                }
+            }
+
             // 上穿时检查是否触发买入
             if (crossedUp)
             {
                 double entryLevel = FloorLevel(price);
                 ceilLevelForUI = CeilLevel(price);  // 上穿时更新 AutoFill
 
-                // 触发条件：上穿了 triggerPrice
-                if (entryLevel > state.AgentBreakedLevel && Math.Abs(entryLevel - nextTriggerPrice) < 0.001)
+                // 触发条件：上穿了旧的 triggerPrice（避免时序问题）
+                if (entryLevel > state.AgentBreakedLevel && previousTriggerPrice > 0 && Math.Abs(entryLevel - previousTriggerPrice) < 0.001)
                 {
                     //string condStr = entryLevel > sessionHighLevel ? "NewHigh" : "Breakout";
                     //logSignal = $"[Agent] {state.Symbol} Signal: {condStr}, EntryLevel={entryLevel:F2}, SessionHigh={sessionHigh:F2}, BreakedLevel={state.AgentBreakedLevel:F2}";
@@ -326,9 +333,9 @@ namespace TradingEngine.Managers
         #region Helper Methods
 
         /// <summary>
-        /// 向下取整到 0.5
+        /// 向下取整到 0.5（公开给其他模块使用）
         /// </summary>
-        private static double FloorLevel(double price)
+        public static double FloorLevel(double price)
         {
             return Math.Floor(Math.Round(price * 2, 2)) / 2;
         }

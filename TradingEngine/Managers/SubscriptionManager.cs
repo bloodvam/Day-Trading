@@ -18,6 +18,7 @@ namespace TradingEngine.Managers
         public event Action<Tick>? TickReceived;
         public event Action<string>? SymbolSubscribed;
         public event Action<string>? SymbolUnsubscribed;
+        public event Action<string, double>? SessionHighUpdated;  // symbol, newHigh
 
         public SubscriptionManager(DasClient client, SymbolDataManager dataManager, BarAggregator barAggregator)
         {
@@ -39,6 +40,13 @@ namespace TradingEngine.Managers
             if (state == null) return;
 
             MessageParser.ParseQuote(line, state.Quote);
+
+            // 只在 SessionHigh == 0 时用 Quote.High 初始化
+            if (state.SessionHigh == 0 && state.Quote.High > 0)
+            {
+                state.SessionHigh = state.Quote.High;
+                SessionHighUpdated?.Invoke(symbol, state.SessionHigh);
+            }
 
             // 所有订阅股票的 Quote 更新都触发
             AnyQuoteUpdated?.Invoke(state.Quote);

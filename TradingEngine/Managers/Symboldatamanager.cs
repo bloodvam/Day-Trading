@@ -112,6 +112,8 @@ namespace TradingEngine.Managers
         public bool StrategyEnabled { get; set; }
         public bool HasTriggeredBuy { get; set; }
         public bool HasTriggeredSell { get; set; }
+        public int StopVolumeAccumulated { get; set; }    // 止损累计成交量
+        public bool IsHighBreakout { get; set; }       // 开盘突破策略（止损只用 barLow - 0.01）
         public AddPositionMode PositionMode { get; set; }  // 当前等待触发的模式
 
         // Trailing Stop 状态
@@ -223,6 +225,8 @@ namespace TradingEngine.Managers
             StrategyEnabled = false;
             HasTriggeredBuy = false;
             HasTriggeredSell = false;
+            StopVolumeAccumulated = 0;
+            IsHighBreakout = false;
             PositionMode = AddPositionMode.None;
 
             // Trailing Stop 状态

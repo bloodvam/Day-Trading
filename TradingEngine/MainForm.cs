@@ -84,7 +84,7 @@ namespace TradingEngine
             var topContainer = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = 575  // 50+40+40+135+40+70+200
+                Height = 590  // 50+40+40+135+40+70+215
             };
 
             _connectionPanel.Dock = DockStyle.Top;
@@ -129,7 +129,7 @@ namespace TradingEngine
             var topLogRow = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = 60  // 会在 Resize 时调整
+                Height = 90  // 会在 Resize 时调整为 60%
             };
 
             _strategyLogPanel.Dock = DockStyle.Left;
@@ -148,7 +148,7 @@ namespace TradingEngine
             logContainer.Resize += (s, e) =>
             {
                 int totalHeight = logContainer.Height;
-                topLogRow.Height = (int)(totalHeight * 0.4);  // 40% 给 Strategy + Agent
+                topLogRow.Height = (int)(totalHeight * 0.6);  // 60% 给 Strategy + Agent
                 _strategyLogPanel.Width = topLogRow.Width / 2;
             };
 

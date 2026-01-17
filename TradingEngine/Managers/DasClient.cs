@@ -151,7 +151,7 @@ namespace TradingEngine.Managers
         private void DispatchLine(string line)
         {
             RawMessage?.Invoke(line);
-            Debug.WriteLine(line);
+            //Debug.WriteLine(line);
 
             // 登录成功检测
             if (line.StartsWith("#OrderServer:Logon:Successful") || line.StartsWith("#LOGIN SUCCESSED"))
@@ -245,7 +245,17 @@ namespace TradingEngine.Managers
         public Task SubscribeLv1(string symbol) => SendAsync($"SB {symbol} Lv1");
         public Task SubscribeTimeSales(string symbol) => SendAsync($"SB {symbol} tms");
         public Task SubscribeLv2(string symbol) => SendAsync($"SB {symbol} Lv2");
-        public Task SubscribeMinChart(string symbol) => SendAsync($"SB {symbol} MINCHART LATEST");
+
+        /// <summary>
+        /// 订阅分钟图（从今天 4:00 开始到最新）
+        /// </summary>
+        public Task SubscribeMinChart(string symbol)
+        {
+            // 格式: SB symbol MINCHART StartTime LATEST MinType
+            // StartTime 格式: YYYY/MM/DD-HH:MM
+            string startTime = DateTime.Today.ToString("yyyy/MM/dd") + "-04:00";
+            return SendAsync($"SB {symbol} MINCHART {startTime} LATEST 1");
+        }
 
         public Task UnsubscribeLv1(string symbol) => SendAsync($"UNSB {symbol} Lv1");
         public Task UnsubscribeTimeSales(string symbol) => SendAsync($"UNSB {symbol} tms");

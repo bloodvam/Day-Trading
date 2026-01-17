@@ -1,6 +1,7 @@
 ﻿using TradingEngine.Config;
 using TradingEngine.Managers;
 using TradingEngine.Models;
+using System.Drawing;
 
 namespace TradingEngine.Core
 {
@@ -28,6 +29,7 @@ namespace TradingEngine.Core
         public string? ActiveSymbol => _dataManager.ActiveSymbol;
         public IReadOnlyCollection<string> SubscribedSymbols => _dataManager.Symbols;
         public AccountInfo AccountInfo => _accountManager.AccountInfo;
+        public Position? GetPosition(string symbol) => _accountManager.GetPosition(symbol);
 
         #endregion
 
@@ -82,7 +84,9 @@ namespace TradingEngine.Core
         public event Action<string>? Log;
         public event Action<string>? OrderLog;
         public event Action<string>? StrategyLog;
+        public event Action<string, Color>? StrategyLogWithColor;  // 带颜色的 Strategy 日志
         public event Action<string>? AgentLog;
+        public event Action<string, Color>? AgentLogWithColor;  // 带颜色的 Agent 日志
         public event Action<string>? RawMessage;
         public event Action<string>? CommandSent;
 
@@ -138,6 +142,13 @@ namespace TradingEngine.Core
             // Subscription events
             _subscriptionManager.QuoteUpdated += (q) => QuoteUpdated?.Invoke(q);
             _subscriptionManager.AnyQuoteUpdated += (q) => AnyQuoteUpdated?.Invoke(q);
+            _subscriptionManager.SessionHighUpdated += (symbol, high) =>
+            {
+                if (symbol == _dataManager.ActiveSymbol)
+                {
+                    SessionHighUpdated?.Invoke(symbol, high);
+                }
+            };
 
             // Bar events - 只触发 ActiveSymbol 的
             _barAggregator.BarUpdated += (b) =>
@@ -195,6 +206,7 @@ namespace TradingEngine.Core
             // Logging - 分类日志
             _orderManager.Log += (msg) => OrderLog?.Invoke(msg);
             _strategyManager.Log += (msg) => StrategyLog?.Invoke(msg);
+            _strategyManager.LogWithColor += (msg, color) => StrategyLogWithColor?.Invoke(msg, color);
             _strategyManager.TrailingStopUpdated += (symbol, trailHalf, trailAll) =>
             {
                 if (symbol == _dataManager.ActiveSymbol)
@@ -202,7 +214,11 @@ namespace TradingEngine.Core
                     TrailingStopUpdated?.Invoke(symbol, trailHalf, trailAll);
                 }
             };
+            _strategyManager.TrailingStopLog += (msg, color) => AgentLogWithColor?.Invoke(msg, color);
             _strategyManager.ValidTickReceived += (tick) => _agentStrategy.OnValidTickReceived(tick);
+
+            // OrderManager - 订单触发时清空 Order Log
+            _orderManager.OrderTriggered += () => NewOperationStarted?.Invoke();
 
             // Agent Strategy
             _agentStrategy.Log += (msg) => AgentLog?.Invoke(msg);
@@ -291,7 +307,6 @@ namespace TradingEngine.Core
             try
             {
                 Log?.Invoke("Hotkey: Buy 1R triggered");
-                NewOperationStarted?.Invoke();
 
                 // Hotkey 触发时，用 currentBar.Low 作为止损价
                 string? symbol = _dataManager.ActiveSymbol;
@@ -323,7 +338,6 @@ namespace TradingEngine.Core
             try
             {
                 Log?.Invoke("Hotkey: Sell All triggered");
-                NewOperationStarted?.Invoke();
                 await _orderManager.SellAll();
             }
             catch (Exception ex)
@@ -337,7 +351,6 @@ namespace TradingEngine.Core
             try
             {
                 Log?.Invoke("Hotkey: Sell Half triggered");
-                NewOperationStarted?.Invoke();
                 await _orderManager.SellHalf();
             }
             catch (Exception ex)
@@ -351,7 +364,6 @@ namespace TradingEngine.Core
             try
             {
                 Log?.Invoke("Hotkey: Sell 70% triggered");
-                NewOperationStarted?.Invoke();
                 await _orderManager.Sell70Percent();
             }
             catch (Exception ex)
@@ -365,7 +377,6 @@ namespace TradingEngine.Core
             try
             {
                 Log?.Invoke("Hotkey: Add Position (Breakeven) triggered");
-                NewOperationStarted?.Invoke();
                 await _orderManager.AddPositionBreakeven();
             }
             catch (Exception ex)
@@ -379,7 +390,6 @@ namespace TradingEngine.Core
             try
             {
                 Log?.Invoke("Hotkey: Add Position (Half Profit) triggered");
-                NewOperationStarted?.Invoke();
                 await _orderManager.AddPositionHalfProfit();
             }
             catch (Exception ex)
@@ -393,12 +403,31 @@ namespace TradingEngine.Core
             try
             {
                 Log?.Invoke("Hotkey: Move Stop to Breakeven triggered");
-                NewOperationStarted?.Invoke();
                 await _orderManager.MoveStopToBreakeven();
             }
             catch (Exception ex)
             {
                 Log?.Invoke($"MoveStopToBreakeven error: {ex.Message}");
+            }
+        }
+
+        public void ToggleTrailingStopForActiveSymbol()
+        {
+            string? symbol = ActiveSymbol;
+            if (string.IsNullOrEmpty(symbol))
+            {
+                Log?.Invoke("Hotkey: Toggle TrailingStop - No symbol selected");
+                return;
+            }
+
+            bool isActive = ToggleTrailingStop(symbol);
+            Log?.Invoke($"Hotkey: TrailingStop {(isActive ? "Started" : "Stopped")} for {symbol}");
+
+            // 触发事件更新 UI
+            var state = _dataManager.Get(symbol);
+            if (state != null)
+            {
+                TrailingStopUpdated?.Invoke(symbol, state.TrailHalf, state.TrailAll);
             }
         }
 
@@ -444,7 +473,8 @@ namespace TradingEngine.Core
                 (Keys.D3 | Keys.Alt, "Alt+3", () => _ = Task.Run(Sell70Percent)),
                 (Keys.Q | Keys.Shift, "Shift+Q", () => _ = Task.Run(AddPositionBreakeven)),
                 (Keys.W | Keys.Shift, "Shift+W", () => _ = Task.Run(AddPositionHalfProfit)),
-                (Keys.Space, "Space", () => _ = Task.Run(MoveStopToBreakeven))
+                (Keys.Space, "Space", () => _ = Task.Run(MoveStopToBreakeven)),
+                (Keys.D1 | Keys.Control, "Ctrl+1", ToggleTrailingStopForActiveSymbol)
             };
 
             foreach (var (key, name, action) in hotkeys)
@@ -501,6 +531,11 @@ namespace TradingEngine.Core
             _strategyManager.StartOpen(symbol, triggerPrice);
         }
 
+        public void StartHighBreakout(string symbol, double triggerPrice)
+        {
+            _strategyManager.StartHighBreakout(symbol, triggerPrice);
+        }
+
         public void StartAddAll(string symbol, double triggerPrice)
         {
             _strategyManager.StartAddAll(symbol, triggerPrice);
@@ -541,6 +576,38 @@ namespace TradingEngine.Core
         public void SetAgentBreakedLevel(string symbol, double level)
         {
             _agentStrategy.SetBreakedLevel(symbol, level);
+        }
+
+        public void SetTrailHalf(string symbol, double value)
+        {
+            var state = _dataManager.Get(symbol);
+            if (state == null) return;
+
+            state.TrailHalf = value;
+            state.TrailAll = Math.Max(value * 1.25, AppConfig.Instance.Trading.MinTrailAll);
+        }
+
+        public void SetTrailAll(string symbol, double value)
+        {
+            var state = _dataManager.Get(symbol);
+            if (state == null) return;
+
+            state.TrailAll = value;
+        }
+
+        public void StartTrailingStop(string symbol)
+        {
+            _strategyManager.StartTrailingStop(symbol);
+        }
+
+        public void StopTrailingStop(string symbol)
+        {
+            _strategyManager.StopTrailingStop(symbol);
+        }
+
+        public bool ToggleTrailingStop(string symbol)
+        {
+            return _strategyManager.ToggleTrailingStop(symbol);
         }
 
         /// <summary>
